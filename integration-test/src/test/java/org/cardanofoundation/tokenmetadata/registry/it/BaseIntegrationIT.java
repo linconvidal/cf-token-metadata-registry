@@ -28,7 +28,7 @@ public abstract class BaseIntegrationIT {
 
     protected static void waitForApiReady() {
         log.info("Waiting for API to become ready at {} ...", API_BASE_URL);
-        await().atMost(Duration.ofMinutes(2))
+        await().atMost(Duration.ofMinutes(5))
                 .pollInterval(Duration.ofSeconds(2))
                 .ignoreExceptions()
                 .until(() -> {

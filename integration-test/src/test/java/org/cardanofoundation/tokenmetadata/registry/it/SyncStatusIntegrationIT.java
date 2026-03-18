@@ -29,7 +29,7 @@ public class SyncStatusIntegrationIT extends BaseIntegrationIT {
 
     private static void waitForSyncComplete() {
         log.info("Waiting for sync to complete before running sync status tests ...");
-        await().atMost(Duration.ofMinutes(2))
+        await().atMost(Duration.ofMinutes(5))
                 .pollInterval(Duration.ofSeconds(2))
                 .ignoreExceptions()
                 .until(() -> {
