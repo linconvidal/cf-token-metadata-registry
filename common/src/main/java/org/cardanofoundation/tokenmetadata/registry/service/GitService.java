@@ -1,5 +1,6 @@
 package org.cardanofoundation.tokenmetadata.registry.service;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.cardanofoundation.tokenmetadata.registry.model.MappingUpdateDetails;
 import org.springframework.beans.factory.annotation.Value;
@@ -12,6 +13,7 @@ import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 
 import static java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME;
@@ -30,6 +32,14 @@ public class GitService {
     private String gitTempFolder;
     @Value("${git.forceClone:false}")
     private boolean forceClone;
+
+    @PostConstruct
+    void validateConfig() {
+        if (gitTempFolder == null || gitTempFolder.isBlank()) {
+            log.warn("git.tmp.folder is blank, defaulting to system temp directory");
+            gitTempFolder = System.getProperty("java.io.tmpdir");
+        }
+    }
 
     public Optional<Path> cloneCardanoTokenRegistryGitRepository() {
         var gitFolder = getGitFolder();
@@ -55,9 +65,10 @@ public class GitService {
 
     private boolean cloneRepo() {
         try {
+            var url = String.format("https://github.com/%s/%s.git", organization, projectName);
             var process = new ProcessBuilder()
                     .directory(getGitFolder().getParentFile())
-                    .command("sh", "-c", String.format("git clone https://github.com/%s/%s.git", organization, projectName))
+                    .command("git", "clone", url)
                     .start();
             var exitCode = process.waitFor();
             return exitCode == 0;
@@ -71,7 +82,7 @@ public class GitService {
         try {
             var process = new ProcessBuilder()
                     .directory(getGitFolder())
-                    .command("sh", "-c", "git pull --rebase")
+                    .command("git", "pull", "--rebase")
                     .start();
 
             var exitCode = process.waitFor();
@@ -98,11 +109,17 @@ public class GitService {
         try {
             var process = new ProcessBuilder()
                     .directory(getMappingsFolder().toFile())
-                    .command("sh", "-c", String.format("git log -n 1 --date-order --no-merges --pretty=format:%%aE#-#%%aI %s", mappingFile.getName()))
+                    .command("git", "log", "-n", "1", "--date-order", "--no-merges",
+                            "--pretty=format:%aE#-#%aI", mappingFile.getName())
                     .start();
 
             BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
             String output = bufferedReader.readLine();
+
+            if (output == null || !output.contains("#-#")) {
+                return Optional.empty();
+            }
+
             var parts = output.split("#-#");
 
             return Optional.of(new MappingUpdateDetails(parts[0], LocalDateTime.parse(parts[1], ISO_OFFSET_DATE_TIME)));
@@ -114,5 +131,45 @@ public class GitService {
 
     }
 
+    public Optional<String> getHeadCommitHash() {
+        try {
+            var process = new ProcessBuilder()
+                    .directory(getGitFolder())
+                    .command("git", "rev-parse", "HEAD")
+                    .start();
+            var exitCode = process.waitFor();
+            if (exitCode == 0) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+                String hash = reader.readLine();
+                if (hash != null && hash.trim().length() == 40) {
+                    return Optional.of(hash.trim());
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to get HEAD commit hash", e);
+        }
+        return Optional.empty();
+    }
+
+    public List<Path> getChangedFiles(String fromHash, String toHash) {
+        try {
+            var process = new ProcessBuilder()
+                    .directory(getGitFolder())
+                    .command("git", "diff", fromHash + ".." + toHash, "--name-only", "--diff-filter=AM")
+                    .start();
+            var exitCode = process.waitFor();
+            if (exitCode == 0) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+                return reader.lines()
+                        .filter(line -> line.startsWith(mappingsFolderName + "/"))
+                        .filter(line -> line.endsWith(".json"))
+                        .map(line -> getGitFolder().toPath().resolve(line))
+                        .toList();
+            }
+        } catch (Exception e) {
+            log.warn(String.format("Failed to get changed files between %s and %s", fromHash, toHash), e);
+        }
+        return List.of();
+    }
 
 }
