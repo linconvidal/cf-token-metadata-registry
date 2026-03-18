@@ -73,6 +73,13 @@ jobs:
           git add .
           git commit -m "test tokens"
 
+      - name: Locate devnet genesis files
+        run: |
+          DEVNET_DIR="$HOME/.yaci-cli/local-clusters/default"
+          echo "Looking for genesis files in $DEVNET_DIR..."
+          ls -la "$DEVNET_DIR/node/" || true
+          echo "DEVNET_DIR=$DEVNET_DIR" >> $GITHUB_ENV
+
       - name: Start API application
         run: |
           java -jar api/target/api-*.jar &
@@ -99,6 +106,10 @@ jobs:
           STORE_SYNCAUTOSTART: true
           STORE_CARDANO_SYNC_START_SLOT: 0
           STORE_CARDANO_SYNC_START_BLOCKHASH: ""
+          STORE_CARDANO_BYRON_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/byron-genesis.json
+          STORE_CARDANO_SHELLEY_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/shelley-genesis.json
+          STORE_CARDANO_ALONZO_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/alonzo-genesis.json
+          STORE_CARDANO_CONWAY_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/conway-genesis.json
 
       - name: Run integration tests
         run: mvn --batch-mode verify -pl integration-test -DskipITs=false
