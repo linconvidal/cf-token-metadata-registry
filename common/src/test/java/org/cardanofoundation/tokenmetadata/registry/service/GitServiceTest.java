@@ -4,14 +4,15 @@ import org.eclipse.jgit.api.Git;
 import org.eclipse.jgit.api.errors.GitAPIException;
 import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.revwalk.RevCommit;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.File;
 import java.io.IOException;
-import java.lang.reflect.Field;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
@@ -30,25 +31,22 @@ class GitServiceTest {
     private Git testRepo;
 
     @BeforeEach
-    void setUp() throws Exception {
+    void setUp() {
         gitService = new GitService();
-        setField("organization", "test-org");
-        setField("projectName", "test-repo");
-        setField("mappingsFolderName", "mappings");
-        setField("gitTempFolder", tempDir.toString());
-        setField("forceClone", false);
+        ReflectionTestUtils.setField(gitService, "organization", "test-org");
+        ReflectionTestUtils.setField(gitService, "projectName", "test-repo");
+        ReflectionTestUtils.setField(gitService, "mappingsFolderName", "mappings");
+        ReflectionTestUtils.setField(gitService, "gitTempFolder", tempDir.toString());
+        ReflectionTestUtils.setField(gitService, "forceClone", false);
     }
 
-    private void setField(String name, Object value) throws Exception {
-        Field field = GitService.class.getDeclaredField(name);
-        field.setAccessible(true);
-        field.set(gitService, value);
-    }
-
-    private void setGit(Git git) throws Exception {
-        Field field = GitService.class.getDeclaredField("git");
-        field.setAccessible(true);
-        field.set(gitService, git);
+    @AfterEach
+    void tearDown() {
+        if (testRepo != null) {
+            testRepo.close();
+            testRepo = null;
+        }
+        gitService.cleanup();
     }
 
     private Git initRepoWithMappings() throws GitAPIException, IOException {
@@ -56,7 +54,6 @@ class GitServiceTest {
         Files.createDirectories(repoDir.resolve("mappings"));
         Git git = Git.init().setDirectory(repoDir.toFile()).call();
 
-        // initial commit so HEAD exists
         Files.writeString(repoDir.resolve("README.md"), "init");
         git.add().addFilepattern("README.md").call();
         git.commit().setMessage("initial commit")
@@ -82,7 +79,7 @@ class GitServiceTest {
         @Test
         void returnsHashFromRepo() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
 
             var result = gitService.getHeadCommitHash();
 
@@ -100,7 +97,7 @@ class GitServiceTest {
         @Test
         void matchesActualHeadCommit() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
             String expectedHash = testRepo.getRepository().resolve("HEAD").name();
 
             var result = gitService.getHeadCommitHash();
@@ -111,7 +108,7 @@ class GitServiceTest {
         @Test
         void updatesAfterNewCommit() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
             String firstHash = gitService.getHeadCommitHash().orElseThrow();
 
             addMappingFile(testRepo, "token1.json", "{}", "dev@test.com");
@@ -127,7 +124,7 @@ class GitServiceTest {
         @Test
         void returnsAuthorEmailAndDate() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
             String email = "author@cardano.org";
             RevCommit commit = addMappingFile(testRepo, "token1.json", "{\"subject\":\"abc\"}", email);
 
@@ -143,7 +140,7 @@ class GitServiceTest {
         @Test
         void returnsEmptyForUnknownFile() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
 
             var result = gitService.getMappingDetails(new File("nonexistent.json"));
 
@@ -153,10 +150,10 @@ class GitServiceTest {
         @Test
         void returnsLatestNonMergeCommit() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
 
             addMappingFile(testRepo, "token1.json", "{\"v\":1}", "first@test.com");
-            RevCommit latest = addMappingFile(testRepo, "token1.json", "{\"v\":2}", "latest@test.com");
+            addMappingFile(testRepo, "token1.json", "{\"v\":2}", "latest@test.com");
 
             var result = gitService.getMappingDetails(new File("token1.json"));
 
@@ -178,7 +175,7 @@ class GitServiceTest {
         @Test
         void returnsAddedJsonFilesInMappingsFolder() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
 
             addMappingFile(testRepo, "token1.json", "{}", "dev@test.com");
@@ -193,7 +190,7 @@ class GitServiceTest {
         @Test
         void returnsModifiedFiles() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
             addMappingFile(testRepo, "token1.json", "{\"v\":1}", "dev@test.com");
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
 
@@ -209,7 +206,7 @@ class GitServiceTest {
         @Test
         void filtersOutNonJsonFiles() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
 
             addMappingFile(testRepo, "readme.txt", "text", "dev@test.com");
@@ -225,10 +222,9 @@ class GitServiceTest {
         @Test
         void filtersOutFilesOutsideMappingsFolder() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
 
-            // add file outside mappings
             Path repoDir = testRepo.getRepository().getWorkTree().toPath();
             Files.writeString(repoDir.resolve("other.json"), "{}");
             testRepo.add().addFilepattern("other.json").call();
@@ -248,12 +244,11 @@ class GitServiceTest {
         @Test
         void filtersOutDeletedFiles() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
             addMappingFile(testRepo, "token1.json", "{}", "dev@test.com");
             addMappingFile(testRepo, "token2.json", "{}", "dev@test.com");
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
 
-            // delete token1.json
             Path repoDir = testRepo.getRepository().getWorkTree().toPath();
             Files.delete(repoDir.resolve("mappings/token1.json"));
             testRepo.rm().addFilepattern("mappings/token1.json").call();
@@ -270,7 +265,7 @@ class GitServiceTest {
         @Test
         void returnsEmptyForSameHash() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
             String hash = testRepo.getRepository().resolve("HEAD").name();
 
             List<Path> changed = gitService.getChangedFiles(hash, hash);
@@ -281,7 +276,7 @@ class GitServiceTest {
         @Test
         void returnsEmptyForInvalidHashes() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
 
             List<Path> changed = gitService.getChangedFiles(
                     "0000000000000000000000000000000000000000",
@@ -293,7 +288,7 @@ class GitServiceTest {
         @Test
         void returnsMultipleChangedFiles() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
 
             addMappingFile(testRepo, "token1.json", "{}", "dev@test.com");
@@ -313,48 +308,44 @@ class GitServiceTest {
     class ValidateConfig {
 
         @Test
-        void defaultsToSystemTempWhenBlank() throws Exception {
-            setField("gitTempFolder", "");
+        void defaultsToSystemTempWhenBlank() {
+            ReflectionTestUtils.setField(gitService, "gitTempFolder", "");
 
             gitService.validateConfig();
 
-            Field field = GitService.class.getDeclaredField("gitTempFolder");
-            field.setAccessible(true);
-            assertThat(field.get(gitService)).isEqualTo(System.getProperty("java.io.tmpdir"));
+            assertThat(ReflectionTestUtils.getField(gitService, "gitTempFolder"))
+                    .isEqualTo(System.getProperty("java.io.tmpdir"));
         }
 
         @Test
-        void keepsValueWhenNotBlank() throws Exception {
+        void keepsValueWhenNotBlank() {
             String customPath = "/custom/path";
-            setField("gitTempFolder", customPath);
+            ReflectionTestUtils.setField(gitService, "gitTempFolder", customPath);
 
             gitService.validateConfig();
 
-            Field field = GitService.class.getDeclaredField("gitTempFolder");
-            field.setAccessible(true);
-            assertThat(field.get(gitService)).isEqualTo(customPath);
+            assertThat(ReflectionTestUtils.getField(gitService, "gitTempFolder"))
+                    .isEqualTo(customPath);
         }
     }
 
     @Nested
-    class Cleanup {
+    class CleanupTest {
 
         @Test
-        void closesGitWhenNotNull() throws Exception {
+        void closesAndNullsGit() throws Exception {
             testRepo = initRepoWithMappings();
-            setGit(testRepo);
+            ReflectionTestUtils.setField(gitService, "git", testRepo);
 
             gitService.cleanup();
 
-            // verify no exception thrown and git is still set (but closed)
-            Field field = GitService.class.getDeclaredField("git");
-            field.setAccessible(true);
-            assertThat(field.get(gitService)).isNotNull();
+            assertThat(ReflectionTestUtils.getField(gitService, "git")).isNull();
+            // prevent double-close in tearDown
+            testRepo = null;
         }
 
         @Test
         void handlesNullGitGracefully() {
-            // should not throw
             gitService.cleanup();
         }
     }
@@ -364,29 +355,27 @@ class GitServiceTest {
 
         @Test
         void pullsWhenRepoAlreadyExists() throws Exception {
-            // set up a local "remote" and clone from it
             Path remoteDir = tempDir.resolve("remote-repo");
-            Git remoteGit = Git.init().setBare(true).setDirectory(remoteDir.toFile()).call();
+            try (Git remoteGit = Git.init().setBare(true).setDirectory(remoteDir.toFile()).call()) {
+                Path seedDir = tempDir.resolve("seed");
+                try (Git seedGit = Git.init().setDirectory(seedDir.toFile()).call()) {
+                    Files.createDirectories(seedDir.resolve("mappings"));
+                    Files.writeString(seedDir.resolve("mappings/token.json"), "{}");
+                    seedGit.add().addFilepattern(".").call();
+                    seedGit.commit().setMessage("init")
+                            .setAuthor(new PersonIdent("Seed", "seed@test.com"))
+                            .call();
+                    seedGit.push().setRemote(remoteDir.toUri().toString()).call();
+                }
 
-            // create a non-bare repo, add content, push to remote
-            Path seedDir = tempDir.resolve("seed");
-            Git seedGit = Git.init().setDirectory(seedDir.toFile()).call();
-            Files.createDirectories(seedDir.resolve("mappings"));
-            Files.writeString(seedDir.resolve("mappings/token.json"), "{}");
-            seedGit.add().addFilepattern(".").call();
-            seedGit.commit().setMessage("init")
-                    .setAuthor(new PersonIdent("Seed", "seed@test.com"))
-                    .call();
-            seedGit.push().setRemote(remoteDir.toUri().toString()).call();
-            seedGit.close();
-
-            // clone from local remote into the expected directory
-            Path repoDir = tempDir.resolve("test-repo");
-            Git clonedGit = Git.cloneRepository()
-                    .setURI(remoteDir.toUri().toString())
-                    .setDirectory(repoDir.toFile())
-                    .call();
-            clonedGit.close();
+                Path repoDir = tempDir.resolve("test-repo");
+                try (Git clonedGit = Git.cloneRepository()
+                        .setURI(remoteDir.toUri().toString())
+                        .setDirectory(repoDir.toFile())
+                        .call()) {
+                    // cloned, now close so GitService can open it
+                }
+            }
 
             var result = gitService.cloneCardanoTokenRegistryGitRepository();
 
@@ -397,7 +386,6 @@ class GitServiceTest {
 
         @Test
         void returnsEmptyWhenCloneFails() {
-            // organization/project point to non-existent remote, clone will fail
             var result = gitService.cloneCardanoTokenRegistryGitRepository();
 
             assertThat(result).isEmpty();
@@ -405,18 +393,15 @@ class GitServiceTest {
 
         @Test
         void forceCloneDeletesExistingNonGitDir() throws Exception {
-            setField("forceClone", true);
+            ReflectionTestUtils.setField(gitService, "forceClone", true);
 
-            // create a non-git directory at the expected path
             Path repoDir = tempDir.resolve("test-repo");
             Files.createDirectories(repoDir.resolve("mappings"));
             Files.writeString(repoDir.resolve("some-file.txt"), "stale");
 
-            // clone will fail (bad remote), but the directory should have been deleted
             var result = gitService.cloneCardanoTokenRegistryGitRepository();
 
             assertThat(result).isEmpty();
-            // the stale file should be gone (directory was deleted before clone attempt)
             assertThat(repoDir.resolve("some-file.txt")).doesNotExist();
         }
     }

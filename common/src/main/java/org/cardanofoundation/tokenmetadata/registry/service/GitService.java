@@ -13,8 +13,10 @@ import org.eclipse.jgit.lib.PersonIdent;
 import org.eclipse.jgit.lib.Repository;
 import org.eclipse.jgit.revwalk.RevCommit;
 import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.revwalk.filter.RevFilter;
 import org.eclipse.jgit.treewalk.AbstractTreeIterator;
 import org.eclipse.jgit.treewalk.CanonicalTreeParser;
+import org.eclipse.jgit.treewalk.filter.PathFilter;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.FileSystemUtils;
@@ -56,6 +58,7 @@ public class GitService {
     void cleanup() {
         if (git != null) {
             git.close();
+            git = null;
         }
     }
 
@@ -84,9 +87,7 @@ public class GitService {
 
     private boolean openExistingRepo() {
         try {
-            if (git != null) {
-                git.close();
-            }
+            cleanup();
             git = Git.open(getGitFolder());
             return true;
         } catch (IOException e) {
@@ -104,7 +105,7 @@ public class GitService {
                     .call();
             return true;
         } catch (GitAPIException e) {
-            log.warn(String.format("It was not possible to clone the %s project", projectName), e);
+            log.warn("It was not possible to clone the {} project", projectName, e);
             return false;
         }
     }
@@ -126,7 +127,7 @@ private boolean isGitRepo() {
     }
 
     private File getGitFolder() {
-        return new File(String.format("%s/%s", gitTempFolder, projectName));
+        return Path.of(gitTempFolder).resolve(projectName).toFile();
     }
 
     private Path getMappingsFolder() {
@@ -139,28 +140,26 @@ private boolean isGitRepo() {
             return Optional.empty();
         }
         try {
-            Repository repository = git.getRepository();
             String relativePath = mappingsFolderName + "/" + mappingFile.getName();
 
             Iterable<RevCommit> commits = git.log()
                     .addPath(relativePath)
-                    .setMaxCount(10)
+                    .setRevFilter(RevFilter.NO_MERGES)
+                    .setMaxCount(1)
                     .call();
 
             for (RevCommit commit : commits) {
-                if (commit.getParentCount() <= 1) {
-                    PersonIdent author = commit.getAuthorIdent();
-                    String email = author.getEmailAddress();
-                    LocalDateTime updatedAt = LocalDateTime.ofInstant(
-                            author.getWhenAsInstant(), ZoneOffset.UTC);
-                    return Optional.of(new MappingUpdateDetails(email, updatedAt));
-                }
+                PersonIdent author = commit.getAuthorIdent();
+                String email = author.getEmailAddress();
+                LocalDateTime updatedAt = LocalDateTime.ofInstant(
+                        author.getWhenAsInstant(), ZoneOffset.UTC);
+                return Optional.of(new MappingUpdateDetails(email, updatedAt));
             }
 
             return Optional.empty();
         } catch (GitAPIException e) {
-            log.warn(String.format("it was not possible to determine updatedBy and updatedAt for mapping file: %s",
-                    mappingFile.getName()), e);
+            log.warn("it was not possible to determine updatedBy and updatedAt for mapping file: {}",
+                    mappingFile.getName(), e);
             return Optional.empty();
         }
     }
@@ -204,18 +203,19 @@ private boolean isGitRepo() {
             List<DiffEntry> diffs = git.diff()
                     .setOldTree(oldTree)
                     .setNewTree(newTree)
+                    .setPathFilter(PathFilter.create(mappingsFolderName))
                     .call();
 
+            Path repoRoot = getGitFolder().toPath();
             return diffs.stream()
                     .filter(d -> d.getChangeType() == DiffEntry.ChangeType.ADD
                             || d.getChangeType() == DiffEntry.ChangeType.MODIFY)
                     .map(DiffEntry::getNewPath)
-                    .filter(path -> path.startsWith(mappingsFolderName + "/"))
                     .filter(path -> path.endsWith(".json"))
-                    .map(path -> getGitFolder().toPath().resolve(path))
+                    .map(repoRoot::resolve)
                     .toList();
         } catch (Exception e) {
-            log.warn(String.format("Failed to get changed files between %s and %s", fromHash, toHash), e);
+            log.warn("Failed to get changed files between {} and {}", fromHash, toHash, e);
         }
         return List.of();
     }
@@ -223,14 +223,10 @@ private boolean isGitRepo() {
     private AbstractTreeIterator prepareTreeParser(Repository repository, ObjectId objectId) throws IOException {
         try (RevWalk walk = new RevWalk(repository)) {
             var commit = walk.parseCommit(objectId);
-            var tree = walk.parseTree(commit.getTree().getId());
-
             var treeParser = new CanonicalTreeParser();
             try (var reader = repository.newObjectReader()) {
-                treeParser.reset(reader, tree.getId());
+                treeParser.reset(reader, commit.getTree().getId());
             }
-
-            walk.dispose();
             return treeParser;
         }
     }
