@@ -34,17 +34,17 @@ import java.util.Optional;
 public class GitService {
 
     @Value("${git.organization:cardano-foundation}")
-    private String organization;
+    String organization;
     @Value("${git.projectName:cardano-token-registry}")
-    private String projectName;
+    String projectName;
     @Value("${git.mappingsFolder:mappings}")
-    private String mappingsFolderName;
+    String mappingsFolderName;
     @Value("${git.tmp.folder:/tmp}")
-    private String gitTempFolder;
+    String gitTempFolder;
     @Value("${git.forceClone:false}")
-    private boolean forceClone;
+    boolean forceClone;
 
-    private Git git;
+    Git git;
 
     @PostConstruct
     void validateConfig() {

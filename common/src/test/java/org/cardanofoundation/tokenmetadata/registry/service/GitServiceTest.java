@@ -9,7 +9,6 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.test.util.ReflectionTestUtils;
 
 import java.io.File;
 import java.io.IOException;
@@ -33,11 +32,11 @@ class GitServiceTest {
     @BeforeEach
     void setUp() {
         gitService = new GitService();
-        ReflectionTestUtils.setField(gitService, "organization", "test-org");
-        ReflectionTestUtils.setField(gitService, "projectName", "test-repo");
-        ReflectionTestUtils.setField(gitService, "mappingsFolderName", "mappings");
-        ReflectionTestUtils.setField(gitService, "gitTempFolder", tempDir.toString());
-        ReflectionTestUtils.setField(gitService, "forceClone", false);
+        gitService.organization = "test-org";
+        gitService.projectName = "test-repo";
+        gitService.mappingsFolderName = "mappings";
+        gitService.gitTempFolder = tempDir.toString();
+        gitService.forceClone = false;
     }
 
     @AfterEach
@@ -79,7 +78,7 @@ class GitServiceTest {
         @Test
         void returnsHashFromRepo() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
 
             var result = gitService.getHeadCommitHash();
 
@@ -97,7 +96,7 @@ class GitServiceTest {
         @Test
         void matchesActualHeadCommit() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
             String expectedHash = testRepo.getRepository().resolve("HEAD").name();
 
             var result = gitService.getHeadCommitHash();
@@ -108,7 +107,7 @@ class GitServiceTest {
         @Test
         void updatesAfterNewCommit() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
             String firstHash = gitService.getHeadCommitHash().orElseThrow();
 
             addMappingFile(testRepo, "token1.json", "{}", "dev@test.com");
@@ -124,7 +123,7 @@ class GitServiceTest {
         @Test
         void returnsAuthorEmailAndDate() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
             String email = "author@cardano.org";
             RevCommit commit = addMappingFile(testRepo, "token1.json", "{\"subject\":\"abc\"}", email);
 
@@ -140,7 +139,7 @@ class GitServiceTest {
         @Test
         void returnsEmptyForUnknownFile() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
 
             var result = gitService.getMappingDetails(new File("nonexistent.json"));
 
@@ -150,7 +149,7 @@ class GitServiceTest {
         @Test
         void returnsLatestNonMergeCommit() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
 
             addMappingFile(testRepo, "token1.json", "{\"v\":1}", "first@test.com");
             addMappingFile(testRepo, "token1.json", "{\"v\":2}", "latest@test.com");
@@ -175,7 +174,7 @@ class GitServiceTest {
         @Test
         void returnsAddedJsonFilesInMappingsFolder() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
 
             addMappingFile(testRepo, "token1.json", "{}", "dev@test.com");
@@ -190,7 +189,7 @@ class GitServiceTest {
         @Test
         void returnsModifiedFiles() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
             addMappingFile(testRepo, "token1.json", "{\"v\":1}", "dev@test.com");
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
 
@@ -206,7 +205,7 @@ class GitServiceTest {
         @Test
         void filtersOutNonJsonFiles() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
 
             addMappingFile(testRepo, "readme.txt", "text", "dev@test.com");
@@ -222,7 +221,7 @@ class GitServiceTest {
         @Test
         void filtersOutFilesOutsideMappingsFolder() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
 
             Path repoDir = testRepo.getRepository().getWorkTree().toPath();
@@ -244,7 +243,7 @@ class GitServiceTest {
         @Test
         void filtersOutDeletedFiles() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
             addMappingFile(testRepo, "token1.json", "{}", "dev@test.com");
             addMappingFile(testRepo, "token2.json", "{}", "dev@test.com");
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
@@ -265,7 +264,7 @@ class GitServiceTest {
         @Test
         void returnsEmptyForSameHash() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
             String hash = testRepo.getRepository().resolve("HEAD").name();
 
             List<Path> changed = gitService.getChangedFiles(hash, hash);
@@ -276,7 +275,7 @@ class GitServiceTest {
         @Test
         void returnsEmptyForInvalidHashes() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
 
             List<Path> changed = gitService.getChangedFiles(
                     "0000000000000000000000000000000000000000",
@@ -288,7 +287,7 @@ class GitServiceTest {
         @Test
         void returnsMultipleChangedFiles() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
             String fromHash = testRepo.getRepository().resolve("HEAD").name();
 
             addMappingFile(testRepo, "token1.json", "{}", "dev@test.com");
@@ -309,23 +308,21 @@ class GitServiceTest {
 
         @Test
         void defaultsToSystemTempWhenBlank() {
-            ReflectionTestUtils.setField(gitService, "gitTempFolder", "");
+            gitService.gitTempFolder = "";
 
             gitService.validateConfig();
 
-            assertThat(ReflectionTestUtils.getField(gitService, "gitTempFolder"))
-                    .isEqualTo(System.getProperty("java.io.tmpdir"));
+            assertThat(gitService.gitTempFolder).isEqualTo(System.getProperty("java.io.tmpdir"));
         }
 
         @Test
         void keepsValueWhenNotBlank() {
             String customPath = "/custom/path";
-            ReflectionTestUtils.setField(gitService, "gitTempFolder", customPath);
+            gitService.gitTempFolder = customPath;
 
             gitService.validateConfig();
 
-            assertThat(ReflectionTestUtils.getField(gitService, "gitTempFolder"))
-                    .isEqualTo(customPath);
+            assertThat(gitService.gitTempFolder).isEqualTo(customPath);
         }
     }
 
@@ -335,11 +332,11 @@ class GitServiceTest {
         @Test
         void closesAndNullsGit() throws Exception {
             testRepo = initRepoWithMappings();
-            ReflectionTestUtils.setField(gitService, "git", testRepo);
+            gitService.git = testRepo;
 
             gitService.cleanup();
 
-            assertThat(ReflectionTestUtils.getField(gitService, "git")).isNull();
+            assertThat(gitService.git).isNull();
             // prevent double-close in tearDown
             testRepo = null;
         }
@@ -373,7 +370,6 @@ class GitServiceTest {
                         .setURI(remoteDir.toUri().toString())
                         .setDirectory(repoDir.toFile())
                         .call()) {
-                    // cloned, now close so GitService can open it
                 }
             }
 
@@ -393,7 +389,7 @@ class GitServiceTest {
 
         @Test
         void forceCloneDeletesExistingNonGitDir() throws Exception {
-            ReflectionTestUtils.setField(gitService, "forceClone", true);
+            gitService.forceClone = true;
 
             Path repoDir = tempDir.resolve("test-repo");
             Files.createDirectories(repoDir.resolve("mappings"));
