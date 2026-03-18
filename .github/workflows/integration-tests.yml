@@ -75,10 +75,12 @@ jobs:
 
       - name: Locate devnet genesis files
         run: |
-          DEVNET_DIR="$HOME/.yaci-cli/local-clusters/default"
-          echo "Looking for genesis files in $DEVNET_DIR..."
-          ls -la "$DEVNET_DIR/node/" || true
-          echo "DEVNET_DIR=$DEVNET_DIR" >> $GITHUB_ENV
+          echo "Searching for genesis files under $HOME/.yaci-cli ..."
+          find "$HOME/.yaci-cli" -name "shelley-genesis.json" 2>/dev/null
+          GENESIS_DIR=$(dirname "$(find "$HOME/.yaci-cli" -name "shelley-genesis.json" -print -quit 2>/dev/null)")
+          echo "Found genesis files in: $GENESIS_DIR"
+          ls -la "$GENESIS_DIR/"
+          echo "GENESIS_DIR=$GENESIS_DIR" >> $GITHUB_ENV
 
       - name: Start API application
         run: |
@@ -107,10 +109,10 @@ jobs:
           STORE_CARDANO_SYNC_START_SLOT: 0
           STORE_CARDANO_SYNC_START_BLOCKHASH: ""
           SERVER_PORT: 8081
-          STORE_CARDANO_BYRON_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/byron-genesis.json
-          STORE_CARDANO_SHELLEY_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/shelley-genesis.json
-          STORE_CARDANO_ALONZO_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/alonzo-genesis.json
-          STORE_CARDANO_CONWAY_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/conway-genesis.json
+          STORE_CARDANO_BYRON_GENESIS_FILE: ${{ env.GENESIS_DIR }}/byron-genesis.json
+          STORE_CARDANO_SHELLEY_GENESIS_FILE: ${{ env.GENESIS_DIR }}/shelley-genesis.json
+          STORE_CARDANO_ALONZO_GENESIS_FILE: ${{ env.GENESIS_DIR }}/alonzo-genesis.json
+          STORE_CARDANO_CONWAY_GENESIS_FILE: ${{ env.GENESIS_DIR }}/conway-genesis.json
 
       - name: Run integration tests
         run: mvn --batch-mode verify -pl integration-test -DskipITs=false
