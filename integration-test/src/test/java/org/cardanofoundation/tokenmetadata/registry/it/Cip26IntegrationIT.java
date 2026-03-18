@@ -90,10 +90,11 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
 
     @Test
     void v2_queryUnknownSubject_shouldReturn404() {
-        var response = restTemplate.getForEntity(
-                API_BASE_URL + "/api/v2/subjects/" + UNKNOWN_SUBJECT, String.class);
+        var ex = assertThrows(org.springframework.web.client.HttpClientErrorException.NotFound.class,
+                () -> restTemplate.getForEntity(
+                        API_BASE_URL + "/api/v2/subjects/" + UNKNOWN_SUBJECT, String.class));
 
-        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
     }
 
     @Test
