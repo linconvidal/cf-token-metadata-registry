@@ -39,8 +39,8 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
 
     private static void waitForSyncComplete() {
         log.info("Waiting for CIP-26 sync to complete (subject={}) ...", FULL_TOKEN_SUBJECT);
-        await().atMost(Duration.ofMinutes(5))
-                .pollInterval(Duration.ofSeconds(3))
+        await().atMost(Duration.ofMinutes(2))
+                .pollInterval(Duration.ofSeconds(2))
                 .ignoreExceptions()
                 .until(() -> {
                     ResponseEntity<String> response = restTemplate.getForEntity(

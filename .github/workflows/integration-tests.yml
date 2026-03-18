@@ -45,10 +45,10 @@ jobs:
         run: mvn --batch-mode clean install -DskipTests
 
       - name: Install yaci-devkit
-        run: npm install -g @bloxbean/yaci-devkit
+        run: npm install -g @bloxbean/yaci-devkit@0.11.0-beta1
 
       - name: Start Yaci DevKit
-        run: nohup yaci-devkit up --enable-yaci-store &
+        run: nohup yaci-devkit up --enable-yaci-store --block-time 0.2 &
 
       - name: Wait for devnet to be ready
         run: |
@@ -59,7 +59,7 @@ jobs:
               break
             fi
             echo "Attempt $i/30 - Store API not ready yet, waiting..."
-            sleep 5
+            sleep 2
           done
 
       - name: Setup test token registry (CIP-26)
@@ -89,8 +89,8 @@ jobs:
               echo "API is ready."
               break
             fi
-            echo "Attempt $i/60 - waiting 5s..."
-            sleep 5
+            echo "Attempt $i/60 - waiting 2s..."
+            sleep 2
           done
         env:
           DB_URL: jdbc:postgresql://localhost:5432/cf_token_metadata_registry

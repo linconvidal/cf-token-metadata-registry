@@ -49,8 +49,8 @@ public class Cip68IntegrationIT extends BaseIntegrationIT {
 
     private static void waitForCip68Indexed(String subject) {
         log.info("Waiting for CIP-68 token to be indexed (subject={}) ...", subject);
-        await().atMost(Duration.ofMinutes(5))
-                .pollInterval(Duration.ofSeconds(3))
+        await().atMost(Duration.ofMinutes(2))
+                .pollInterval(Duration.ofSeconds(1))
                 .ignoreExceptions()
                 .until(() -> {
                     ResponseEntity<String> response = restTemplate.getForEntity(

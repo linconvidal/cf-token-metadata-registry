@@ -28,8 +28,8 @@ public abstract class BaseIntegrationIT {
 
     protected static void waitForApiReady() {
         log.info("Waiting for API to become ready at {} ...", API_BASE_URL);
-        await().atMost(Duration.ofMinutes(5))
-                .pollInterval(Duration.ofSeconds(5))
+        await().atMost(Duration.ofMinutes(2))
+                .pollInterval(Duration.ofSeconds(2))
                 .ignoreExceptions()
                 .until(() -> {
                     ResponseEntity<String> response = restTemplate.getForEntity(API_BASE_URL + "/actuator/health", String.class);
