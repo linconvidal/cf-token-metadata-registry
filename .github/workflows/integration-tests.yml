@@ -75,11 +75,15 @@ jobs:
 
       - name: Locate devnet genesis files
         run: |
-          echo "Searching for genesis files under $HOME/.yaci-cli ..."
-          find "$HOME/.yaci-cli" -name "shelley-genesis.json" 2>/dev/null
-          GENESIS_DIR=$(dirname "$(find "$HOME/.yaci-cli" -name "shelley-genesis.json" -print -quit 2>/dev/null)")
-          echo "Found genesis files in: $GENESIS_DIR"
-          ls -la "$GENESIS_DIR/"
+          echo "=== Full .yaci-cli directory tree ==="
+          find "$HOME/.yaci-cli" -type f 2>/dev/null | head -100
+          echo "=== Looking for local-clusters ==="
+          find "$HOME/.yaci-cli" -type d -name "local-clusters" 2>/dev/null
+          find "$HOME/.yaci-cli" -type d -name "default" 2>/dev/null
+          echo "=== Looking for devnet genesis ==="
+          find "$HOME/.yaci-cli" -path "*/local*" -name "shelley-genesis.json" 2>/dev/null
+          find "$HOME/.yaci-cli" -path "*devnet*" -o -path "*default*" 2>/dev/null | head -50
+          GENESIS_DIR="$HOME/.yaci-cli/local-clusters/default/node/genesis"
           echo "GENESIS_DIR=$GENESIS_DIR" >> $GITHUB_ENV
 
       - name: Start API application
