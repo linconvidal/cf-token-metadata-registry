@@ -1,0 +1,105 @@
+name: Integration Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  integration-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_DB: cf_token_metadata_registry
+          POSTGRES_USER: cardano
+          POSTGRES_PASSWORD: test_password
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Build project
+        run: mvn --batch-mode clean package -DskipTests
+
+      - name: Install yaci-devkit
+        run: npm install -g @bloxbean/yaci-devkit
+
+      - name: Start yaci devnet
+        run: |
+          nohup yaci-devkit start &
+          echo "Waiting for yaci-store API to be ready..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8080/api/v1/blocks > /dev/null 2>&1; then
+              echo "Yaci-store API is ready."
+              break
+            fi
+            echo "Attempt $i/60 - waiting 5s..."
+            sleep 5
+          done
+
+      - name: Setup test token registry (CIP-26)
+        run: |
+          mkdir -p /tmp/test-token-registry/mappings
+          cp integration-test/src/test/resources/test-mappings/*.json /tmp/test-token-registry/mappings/
+          cd /tmp/test-token-registry
+          git init
+          git config user.email "test@test.com"
+          git config user.name "test"
+          git add .
+          git commit -m "test tokens"
+
+      - name: Start API application
+        run: |
+          java -jar api/target/api-*.jar &
+          echo "Waiting for API to be ready..."
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8081/actuator/health > /dev/null 2>&1; then
+              echo "API is ready."
+              break
+            fi
+            echo "Attempt $i/60 - waiting 5s..."
+            sleep 5
+          done
+        env:
+          DB_URL: jdbc:postgresql://localhost:5432/cf_token_metadata_registry
+          DB_USERNAME: cardano
+          DB_PASSWORD: test_password
+          TOKEN_METADATA_SYNC_JOB: true
+          GITHUB_TMP_FOLDER: /tmp
+          GITHUB_PROJECT_NAME: test-token-registry
+          GITHUB_FORCE_CLONE: false
+          STORE_CARDANO_HOST: localhost
+          STORE_CARDANO_PORT: 3001
+          STORE_CARDANO_PROTOCOL_MAGIC: 42
+          STORE_SYNCAUTOSTART: true
+          STORE_CARDANO_SYNC_START_SLOT: 0
+          STORE_CARDANO_SYNC_START_BLOCKHASH: ""
+
+      - name: Run integration tests
+        run: mvn --batch-mode verify -pl integration-test -DskipITs=false
+        env:
+          API_BASE_URL: http://localhost:8081
+          YACI_STORE_URL: http://localhost:8080/api/v1/
