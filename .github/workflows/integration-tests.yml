@@ -76,15 +76,12 @@ jobs:
       - name: Locate devnet genesis files
         run: |
           echo "=== Full .yaci-cli directory tree ==="
-          find "$HOME/.yaci-cli" -type f 2>/dev/null | head -100
-          echo "=== Looking for local-clusters ==="
-          find "$HOME/.yaci-cli" -type d -name "local-clusters" 2>/dev/null
-          find "$HOME/.yaci-cli" -type d -name "default" 2>/dev/null
-          echo "=== Looking for devnet genesis ==="
-          find "$HOME/.yaci-cli" -path "*/local*" -name "shelley-genesis.json" 2>/dev/null
-          find "$HOME/.yaci-cli" -path "*devnet*" -o -path "*default*" 2>/dev/null | head -50
-          GENESIS_DIR="$HOME/.yaci-cli/local-clusters/default/node/genesis"
-          echo "GENESIS_DIR=$GENESIS_DIR" >> $GITHUB_ENV
+          find "$HOME/.yaci-cli" -type f 2>/dev/null | head -200
+          echo "=== Files containing protocol magic 42 ==="
+          grep -rl "protocolMagic" "$HOME/.yaci-cli" 2>/dev/null | head -20
+          grep -rl '"protocolConst"' "$HOME/.yaci-cli" 2>/dev/null | head -20
+          echo "=== All directories ==="
+          find "$HOME/.yaci-cli" -type d 2>/dev/null
 
       - name: Start API application
         run: |
