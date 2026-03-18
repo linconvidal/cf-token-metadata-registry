@@ -1,22 +1,31 @@
 package org.cardanofoundation.tokenmetadata.registry.service;
 
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.PreDestroy;
 import lombok.extern.slf4j.Slf4j;
 import org.cardanofoundation.tokenmetadata.registry.model.MappingUpdateDetails;
+import org.eclipse.jgit.api.Git;
+import org.eclipse.jgit.lib.BranchConfig;
+import org.eclipse.jgit.api.errors.GitAPIException;
+import org.eclipse.jgit.diff.DiffEntry;
+import org.eclipse.jgit.lib.ObjectId;
+import org.eclipse.jgit.lib.PersonIdent;
+import org.eclipse.jgit.lib.Repository;
+import org.eclipse.jgit.revwalk.RevCommit;
+import org.eclipse.jgit.revwalk.RevWalk;
+import org.eclipse.jgit.treewalk.AbstractTreeIterator;
+import org.eclipse.jgit.treewalk.CanonicalTreeParser;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.util.FileSystemUtils;
 
-import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
-import java.io.InputStreamReader;
 import java.nio.file.Path;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
-
-import static java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
 @Service
 @Slf4j
@@ -33,11 +42,20 @@ public class GitService {
     @Value("${git.forceClone:false}")
     private boolean forceClone;
 
+    private Git git;
+
     @PostConstruct
     void validateConfig() {
         if (gitTempFolder == null || gitTempFolder.isBlank()) {
             log.warn("git.tmp.folder is blank, defaulting to system temp directory");
             gitTempFolder = System.getProperty("java.io.tmpdir");
+        }
+    }
+
+    @PreDestroy
+    void cleanup() {
+        if (git != null) {
+            git.close();
         }
     }
 
@@ -47,11 +65,12 @@ public class GitService {
         boolean repoReady;
         if (gitFolder.exists() && (forceClone || !isGitRepo())) {
             log.info("exists and either force clone or not a git repo");
+            cleanup();
             FileSystemUtils.deleteRecursively(gitFolder);
             repoReady = cloneRepo();
         } else if (gitFolder.exists() && isGitRepo()) {
             log.info("exists and is git repo");
-            repoReady = pullRebaseRepo();
+            repoReady = openExistingRepo() && pullRebaseRepo();
         } else {
             repoReady = cloneRepo();
         }
@@ -63,16 +82,28 @@ public class GitService {
         }
     }
 
+    private boolean openExistingRepo() {
+        try {
+            if (git != null) {
+                git.close();
+            }
+            git = Git.open(getGitFolder());
+            return true;
+        } catch (IOException e) {
+            log.warn("Failed to open existing git repository", e);
+            return false;
+        }
+    }
+
     private boolean cloneRepo() {
         try {
             var url = String.format("https://github.com/%s/%s.git", organization, projectName);
-            var process = new ProcessBuilder()
-                    .directory(getGitFolder().getParentFile())
-                    .command("git", "clone", url)
-                    .start();
-            var exitCode = process.waitFor();
-            return exitCode == 0;
-        } catch (Exception e) {
+            git = Git.cloneRepository()
+                    .setURI(url)
+                    .setDirectory(getGitFolder())
+                    .call();
+            return true;
+        } catch (GitAPIException e) {
             log.warn(String.format("It was not possible to clone the %s project", projectName), e);
             return false;
         }
@@ -80,41 +111,17 @@ public class GitService {
 
     private boolean pullRebaseRepo() {
         try {
-            if (!hasRemote()) {
-                log.info("Local git repo has no remote configured, using as-is");
-                return true;
-            }
-            var process = new ProcessBuilder()
-                    .directory(getGitFolder())
-                    .command("git", "pull", "--rebase")
-                    .start();
-
-            var exitCode = process.waitFor();
-            return exitCode == 0;
-        } catch (Exception e) {
+            git.pull()
+                    .setRebase(BranchConfig.BranchRebaseMode.REBASE)
+                    .call();
+            return true;
+        } catch (GitAPIException e) {
             log.warn("it was not possible to update repo. cloning from scratch", e);
             return false;
         }
     }
 
-    private boolean hasRemote() {
-        try {
-            var process = new ProcessBuilder()
-                    .directory(getGitFolder())
-                    .command("git", "remote")
-                    .start();
-            var exitCode = process.waitFor();
-            if (exitCode == 0) {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                return reader.readLine() != null;
-            }
-        } catch (Exception e) {
-            log.warn("Failed to check git remotes", e);
-        }
-        return false;
-    }
-
-    private boolean isGitRepo() {
+private boolean isGitRepo() {
         return getGitFolder().toPath().resolve(".git").toFile().exists();
     }
 
@@ -127,70 +134,105 @@ public class GitService {
     }
 
     public Optional<MappingUpdateDetails> getMappingDetails(File mappingFile) {
-        try {
-            var process = new ProcessBuilder()
-                    .directory(getMappingsFolder().toFile())
-                    .command("git", "log", "-n", "1", "--date-order", "--no-merges",
-                            "--pretty=format:%aE#-#%aI", mappingFile.getName())
-                    .start();
-
-            BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-            String output = bufferedReader.readLine();
-
-            if (output == null || !output.contains("#-#")) {
-                return Optional.empty();
-            }
-
-            var parts = output.split("#-#");
-
-            return Optional.of(new MappingUpdateDetails(parts[0], LocalDateTime.parse(parts[1], ISO_OFFSET_DATE_TIME)));
-
-        } catch (IOException e) {
-            log.warn(String.format("it was not possible to determine updatedBy and updatedAt for mapping file: %s", mappingFile.getName()), e);
+        if (git == null) {
+            log.warn("Git repository not initialized");
             return Optional.empty();
         }
+        try {
+            Repository repository = git.getRepository();
+            String relativePath = mappingsFolderName + "/" + mappingFile.getName();
 
+            Iterable<RevCommit> commits = git.log()
+                    .addPath(relativePath)
+                    .setMaxCount(10)
+                    .call();
+
+            for (RevCommit commit : commits) {
+                if (commit.getParentCount() <= 1) {
+                    PersonIdent author = commit.getAuthorIdent();
+                    String email = author.getEmailAddress();
+                    LocalDateTime updatedAt = LocalDateTime.ofInstant(
+                            author.getWhenAsInstant(), ZoneOffset.UTC);
+                    return Optional.of(new MappingUpdateDetails(email, updatedAt));
+                }
+            }
+
+            return Optional.empty();
+        } catch (GitAPIException e) {
+            log.warn(String.format("it was not possible to determine updatedBy and updatedAt for mapping file: %s",
+                    mappingFile.getName()), e);
+            return Optional.empty();
+        }
     }
 
     public Optional<String> getHeadCommitHash() {
+        if (git == null) {
+            log.warn("Git repository not initialized");
+            return Optional.empty();
+        }
         try {
-            var process = new ProcessBuilder()
-                    .directory(getGitFolder())
-                    .command("git", "rev-parse", "HEAD")
-                    .start();
-            var exitCode = process.waitFor();
-            if (exitCode == 0) {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                String hash = reader.readLine();
-                if (hash != null && hash.trim().length() == 40) {
-                    return Optional.of(hash.trim());
-                }
+            Repository repository = git.getRepository();
+            ObjectId head = repository.resolve("HEAD");
+            if (head != null) {
+                return Optional.of(head.name());
             }
-        } catch (Exception e) {
+        } catch (IOException e) {
             log.warn("Failed to get HEAD commit hash", e);
         }
         return Optional.empty();
     }
 
     public List<Path> getChangedFiles(String fromHash, String toHash) {
+        if (git == null) {
+            log.warn("Git repository not initialized");
+            return List.of();
+        }
         try {
-            var process = new ProcessBuilder()
-                    .directory(getGitFolder())
-                    .command("git", "diff", fromHash + ".." + toHash, "--name-only", "--diff-filter=AM")
-                    .start();
-            var exitCode = process.waitFor();
-            if (exitCode == 0) {
-                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
-                return reader.lines()
-                        .filter(line -> line.startsWith(mappingsFolderName + "/"))
-                        .filter(line -> line.endsWith(".json"))
-                        .map(line -> getGitFolder().toPath().resolve(line))
-                        .toList();
+            Repository repository = git.getRepository();
+
+            ObjectId oldId = repository.resolve(fromHash);
+            ObjectId newId = repository.resolve(toHash);
+
+            if (oldId == null || newId == null) {
+                log.warn("Could not resolve commit hashes: {} -> {}", fromHash, toHash);
+                return List.of();
             }
+
+            AbstractTreeIterator oldTree = prepareTreeParser(repository, oldId);
+            AbstractTreeIterator newTree = prepareTreeParser(repository, newId);
+
+            List<DiffEntry> diffs = git.diff()
+                    .setOldTree(oldTree)
+                    .setNewTree(newTree)
+                    .call();
+
+            return diffs.stream()
+                    .filter(d -> d.getChangeType() == DiffEntry.ChangeType.ADD
+                            || d.getChangeType() == DiffEntry.ChangeType.MODIFY)
+                    .map(DiffEntry::getNewPath)
+                    .filter(path -> path.startsWith(mappingsFolderName + "/"))
+                    .filter(path -> path.endsWith(".json"))
+                    .map(path -> getGitFolder().toPath().resolve(path))
+                    .toList();
         } catch (Exception e) {
             log.warn(String.format("Failed to get changed files between %s and %s", fromHash, toHash), e);
         }
         return List.of();
+    }
+
+    private AbstractTreeIterator prepareTreeParser(Repository repository, ObjectId objectId) throws IOException {
+        try (RevWalk walk = new RevWalk(repository)) {
+            var commit = walk.parseCommit(objectId);
+            var tree = walk.parseTree(commit.getTree().getId());
+
+            var treeParser = new CanonicalTreeParser();
+            try (var reader = repository.newObjectReader()) {
+                treeParser.reset(reader, tree.getId());
+            }
+
+            walk.dispose();
+            return treeParser;
+        }
     }
 
 }
