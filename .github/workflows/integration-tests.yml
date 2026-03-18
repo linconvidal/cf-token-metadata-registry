@@ -106,6 +106,7 @@ jobs:
           STORE_SYNCAUTOSTART: true
           STORE_CARDANO_SYNC_START_SLOT: 0
           STORE_CARDANO_SYNC_START_BLOCKHASH: ""
+          SERVER_PORT: 8081
           STORE_CARDANO_BYRON_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/byron-genesis.json
           STORE_CARDANO_SHELLEY_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/shelley-genesis.json
           STORE_CARDANO_ALONZO_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/alonzo-genesis.json
