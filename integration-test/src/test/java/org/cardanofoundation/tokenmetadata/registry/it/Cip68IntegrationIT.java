@@ -1,5 +1,6 @@
 package org.cardanofoundation.tokenmetadata.registry.it;
 
+import com.bloxbean.cardano.client.backend.blockfrost.service.BFBackendService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -35,7 +36,7 @@ public class Cip68IntegrationIT extends BaseIntegrationIT {
         waitForApiReady();
 
         // Mint a CIP-68 FT on the devnet
-        var minter = new Cip68TestMinter(YACI_STORE_URL);
+        var minter = new Cip68TestMinter(new BFBackendService(YACI_STORE_URL, "Dummy"), restTemplate);
         mintResult = minter.mintCip68FungibleToken(
                 TOKEN_NAME, TOKEN_DESCRIPTION, TOKEN_TICKER, TOKEN_DECIMALS, 1_000_000);
 

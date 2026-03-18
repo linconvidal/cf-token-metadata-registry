@@ -4,8 +4,6 @@ import com.bloxbean.cardano.client.account.Account;
 import com.bloxbean.cardano.client.address.AddressProvider;
 import com.bloxbean.cardano.client.api.model.Result;
 import com.bloxbean.cardano.client.backend.api.BackendService;
-import com.bloxbean.cardano.client.backend.blockfrost.service.BFBackendService;
-import com.bloxbean.cardano.client.backend.model.TransactionContent;
 import com.bloxbean.cardano.client.cip.cip68.CIP68FT;
 import com.bloxbean.cardano.client.cip.cip68.CIP68ReferenceToken;
 import com.bloxbean.cardano.client.common.model.Networks;
@@ -15,14 +13,18 @@ import com.bloxbean.cardano.client.plutus.spec.PlutusV2Script;
 import com.bloxbean.cardano.client.quicktx.QuickTxBuilder;
 import com.bloxbean.cardano.client.quicktx.ScriptTx;
 import com.bloxbean.cardano.client.transaction.spec.Asset;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.web.client.RestTemplate;
 
-import java.io.OutputStream;
 import java.math.BigInteger;
-import java.net.HttpURLConnection;
-import java.net.URL;
-import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.List;
+
+import static org.awaitility.Awaitility.await;
 
 /**
  * Utility to mint CIP-68 token pairs (reference NFT + user FT) on a yaci devnet.
@@ -30,6 +32,7 @@ import java.util.List;
  * that works with the CIP-68 minting API (ScriptTx.mintAsset with inline datum).
  */
 @Slf4j
+@RequiredArgsConstructor
 public class Cip68TestMinter {
 
     private static final String DEVKIT_ADMIN_BASE_URL = "http://localhost:10000/";
@@ -41,12 +44,8 @@ public class Cip68TestMinter {
             .build();
 
     private final BackendService backendService;
-    private final Account senderAccount;
-
-    public Cip68TestMinter(String yaciStoreUrl) {
-        this.backendService = new BFBackendService(yaciStoreUrl, "Dummy");
-        this.senderAccount = new Account(Networks.testnet());
-    }
+    private final RestTemplate restTemplate;
+    private final Account senderAccount = new Account(Networks.testnet());
 
     public record MintResult(String policyId, String assetNameHex, String txHash) {}
 
@@ -60,9 +59,17 @@ public class Cip68TestMinter {
                                               long userTokenQty) throws Exception {
         var senderAddress = senderAccount.baseAddress();
 
-        // Fund the sender
+        // Fund the sender and wait for UTXOs to appear
         topUpFund(senderAddress, 50000);
-        Thread.sleep(5000); // Wait for topup to be processed
+        await().atMost(Duration.ofSeconds(30))
+                .pollInterval(Duration.ofSeconds(2))
+                .ignoreExceptions()
+                .until(() -> {
+                    var utxos = backendService.getUtxoService().getUtxos(senderAddress, 1, 1);
+                    boolean funded = utxos.isSuccessful() && !utxos.getValue().isEmpty();
+                    log.info("Waiting for topup UTXOs: funded={}", funded);
+                    return funded;
+                });
 
         // Build CIP-68 FT metadata using the high-level API
         CIP68FT ft = CIP68FT.create()
@@ -107,46 +114,19 @@ public class Cip68TestMinter {
         return new MintResult(policyId, ftAssetNameHex, result.getValue());
     }
 
-    public void waitForTransaction(Result<String> result) {
-        try {
-            if (result.isSuccessful()) {
-                int count = 0;
-                while (count < 60) {
-                    Result<TransactionContent> txnResult =
-                            backendService.getTransactionService().getTransaction(result.getValue());
-                    if (txnResult.isSuccessful()) {
-                        break;
-                    }
-                    count++;
-                    Thread.sleep(2000);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Error waiting for transaction", e);
-        }
-    }
-
-    private static void topUpFund(String address, long adaAmount) {
+    private void topUpFund(String address, long adaAmount) {
         try {
             String url = DEVKIT_ADMIN_BASE_URL + "local-cluster/api/addresses/topup";
-            URL obj = new URL(url);
-            HttpURLConnection connection = (HttpURLConnection) obj.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setRequestProperty("Content-Type", "application/json; utf-8");
-            connection.setRequestProperty("Accept", "application/json");
-            connection.setDoOutput(true);
+            String json = String.format("{\"address\": \"%s\", \"adaAmount\": %d}", address, adaAmount);
 
-            String jsonInputString = String.format("{\"address\": \"%s\", \"adaAmount\": %d}", address, adaAmount);
-            try (OutputStream os = connection.getOutputStream()) {
-                byte[] input = jsonInputString.getBytes(StandardCharsets.UTF_8);
-                os.write(input, 0, input.length);
-            }
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            var response = restTemplate.postForEntity(url, new HttpEntity<>(json, headers), String.class);
 
-            int responseCode = connection.getResponseCode();
-            if (responseCode == HttpURLConnection.HTTP_OK) {
+            if (response.getStatusCode().is2xxSuccessful()) {
                 log.info("Funds topped up successfully for {}", address);
             } else {
-                log.warn("Failed to top up funds. Response code: {}", responseCode);
+                log.warn("Failed to top up funds. Response code: {}", response.getStatusCode());
             }
         } catch (Exception e) {
             log.warn("Could not topup address: {}", e.getMessage());
