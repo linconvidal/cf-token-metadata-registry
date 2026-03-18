@@ -63,8 +63,8 @@ public class Cip68TestMinter {
 
         // Fund the sender and wait for UTXOs to appear
         topUpFund(senderAddress, 50000);
-        await().atMost(Duration.ofSeconds(10))
-                .pollInterval(Duration.ofMillis(500))
+        await().atMost(Duration.ofSeconds(30))
+                .pollInterval(Duration.ofSeconds(2))
                 .ignoreExceptions()
                 .until(() -> {
                     Result<List<Utxo>> utxos = backendService.getUtxoService().getUtxos(senderAddress, 1, 1);

@@ -45,10 +45,10 @@ jobs:
         run: mvn --batch-mode clean install -DskipTests
 
       - name: Install yaci-devkit
-        run: npm install -g @bloxbean/yaci-devkit@0.11.0-beta1
+        run: npm install -g @bloxbean/yaci-devkit
 
       - name: Start Yaci DevKit
-        run: nohup yaci-devkit up --enable-yaci-store --block-time 0.2 &
+        run: nohup yaci-devkit up --enable-yaci-store &
 
       - name: Wait for devnet to be ready
         run: |
@@ -75,13 +75,10 @@ jobs:
 
       - name: Locate devnet genesis files
         run: |
-          echo "=== Full .yaci-cli directory tree ==="
-          find "$HOME/.yaci-cli" -type f 2>/dev/null | head -200
-          echo "=== Files containing protocol magic 42 ==="
-          grep -rl "protocolMagic" "$HOME/.yaci-cli" 2>/dev/null | head -20
-          grep -rl '"protocolConst"' "$HOME/.yaci-cli" 2>/dev/null | head -20
-          echo "=== All directories ==="
-          find "$HOME/.yaci-cli" -type d 2>/dev/null
+          DEVNET_DIR="$HOME/.yaci-cli/local-clusters/default"
+          echo "Looking for genesis files in $DEVNET_DIR..."
+          ls -la "$DEVNET_DIR/node/genesis/" || true
+          echo "DEVNET_DIR=$DEVNET_DIR" >> $GITHUB_ENV
 
       - name: Start API application
         run: |
@@ -110,10 +107,10 @@ jobs:
           STORE_CARDANO_SYNC_START_SLOT: 0
           STORE_CARDANO_SYNC_START_BLOCKHASH: ""
           SERVER_PORT: 8081
-          STORE_CARDANO_BYRON_GENESIS_FILE: ${{ env.GENESIS_DIR }}/byron-genesis.json
-          STORE_CARDANO_SHELLEY_GENESIS_FILE: ${{ env.GENESIS_DIR }}/shelley-genesis.json
-          STORE_CARDANO_ALONZO_GENESIS_FILE: ${{ env.GENESIS_DIR }}/alonzo-genesis.json
-          STORE_CARDANO_CONWAY_GENESIS_FILE: ${{ env.GENESIS_DIR }}/conway-genesis.json
+          STORE_CARDANO_BYRON_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/byron-genesis.json
+          STORE_CARDANO_SHELLEY_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/shelley-genesis.json
+          STORE_CARDANO_ALONZO_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/alonzo-genesis.json
+          STORE_CARDANO_CONWAY_GENESIS_FILE: ${{ env.DEVNET_DIR }}/node/genesis/conway-genesis.json
 
       - name: Run integration tests
         run: mvn --batch-mode verify -pl integration-test -DskipITs=false
