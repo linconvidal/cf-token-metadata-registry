@@ -1,5 +1,6 @@
 package org.cardanofoundation.tokenmetadata.registry.service;
 
+import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.cardanofoundation.tokenmetadata.registry.model.MappingUpdateDetails;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,7 +16,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 
-import static java.lang.System.getProperty;
 import static java.time.format.DateTimeFormatter.ISO_OFFSET_DATE_TIME;
 
 @Service
@@ -32,6 +32,14 @@ public class GitService {
     private String gitTempFolder;
     @Value("${git.forceClone:false}")
     private boolean forceClone;
+
+    @PostConstruct
+    void validateConfig() {
+        if (gitTempFolder == null || gitTempFolder.isBlank()) {
+            log.warn("git.tmp.folder is blank, defaulting to system temp directory");
+            gitTempFolder = System.getProperty("java.io.tmpdir");
+        }
+    }
 
     public Optional<Path> cloneCardanoTokenRegistryGitRepository() {
         var gitFolder = getGitFolder();
@@ -57,9 +65,10 @@ public class GitService {
 
     private boolean cloneRepo() {
         try {
+            var url = String.format("https://github.com/%s/%s.git", organization, projectName);
             var process = new ProcessBuilder()
                     .directory(getGitFolder().getParentFile())
-                    .command("sh", "-c", String.format("git clone https://github.com/%s/%s.git", organization, projectName))
+                    .command("git", "clone", url)
                     .start();
             var exitCode = process.waitFor();
             return exitCode == 0;
@@ -73,7 +82,7 @@ public class GitService {
         try {
             var process = new ProcessBuilder()
                     .directory(getGitFolder())
-                    .command("sh", "-c", "git pull --rebase")
+                    .command("git", "pull", "--rebase")
                     .start();
 
             var exitCode = process.waitFor();
@@ -85,16 +94,10 @@ public class GitService {
     }
 
     private boolean isGitRepo() {
-        if (getGitFolder() == null || getGitFolder().toPath() == null) {
-            return false;
-        }
         return getGitFolder().toPath().resolve(".git").toFile().exists();
     }
 
     private File getGitFolder() {
-        if (gitTempFolder == null || gitTempFolder.isBlank()) {
-            gitTempFolder = getProperty("java.io.tmpdir");
-        }
         return new File(String.format("%s/%s", gitTempFolder, projectName));
     }
 
@@ -106,7 +109,8 @@ public class GitService {
         try {
             var process = new ProcessBuilder()
                     .directory(getMappingsFolder().toFile())
-                    .command("sh", "-c", String.format("git log -n 1 --date-order --no-merges --pretty=format:%%aE#-#%%aI %s", mappingFile.getName()))
+                    .command("git", "log", "-n", "1", "--date-order", "--no-merges",
+                            "--pretty=format:%aE#-#%aI", mappingFile.getName())
                     .start();
 
             BufferedReader bufferedReader = new BufferedReader(new InputStreamReader(process.getInputStream()));
@@ -131,7 +135,7 @@ public class GitService {
         try {
             var process = new ProcessBuilder()
                     .directory(getGitFolder())
-                    .command("sh", "-c", "git rev-parse HEAD")
+                    .command("git", "rev-parse", "HEAD")
                     .start();
             var exitCode = process.waitFor();
             if (exitCode == 0) {
@@ -151,8 +155,7 @@ public class GitService {
         try {
             var process = new ProcessBuilder()
                     .directory(getGitFolder())
-                    .command("sh", "-c",
-                            String.format("git diff %s..%s --name-only --diff-filter=AM", fromHash, toHash))
+                    .command("git", "diff", fromHash + ".." + toHash, "--name-only", "--diff-filter=AM")
                     .start();
             var exitCode = process.waitFor();
             if (exitCode == 0) {

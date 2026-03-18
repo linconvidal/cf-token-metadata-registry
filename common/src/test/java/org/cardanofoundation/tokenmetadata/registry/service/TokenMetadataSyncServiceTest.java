@@ -54,7 +54,7 @@ public class TokenMetadataSyncServiceTest {
     public class SynchronizeDatabase {
 
         @Test
-        public void fullSync_whenNoHashStored() throws Exception {
+        public void fullSync_whenNoHashStored() {
             when(syncStateRepository.findTopByOrderByIdDesc()).thenReturn(Optional.empty());
             Path mockRepoPath = mock(Path.class);
             File mockMappingsDir = mock(File.class);
@@ -70,7 +70,7 @@ public class TokenMetadataSyncServiceTest {
         }
 
         @Test
-        public void incrementalSync_whenHashStoredAndChanged() throws Exception {
+        public void incrementalSync_whenHashStoredAndChanged() {
             when(syncStateRepository.findTopByOrderByIdDesc()).thenReturn(Optional.of(new OffChainSyncState(oldHash)));
             Path mockRepoPath = mock(Path.class);
             when(gitService.cloneCardanoTokenRegistryGitRepository()).thenReturn(Optional.of(mockRepoPath));
@@ -118,6 +118,47 @@ public class TokenMetadataSyncServiceTest {
 
             verify(syncStateRepository, never()).save(any());
             assertEquals(SyncStatusEnum.SYNC_ERROR, tokenMetadataSyncService.getSyncStatus().getSyncStatus());
+        }
+
+        @Test
+        public void fullSync_whenHeadHashUnavailable() {
+            when(syncStateRepository.findTopByOrderByIdDesc()).thenReturn(Optional.empty());
+            Path mockRepoPath = mock(Path.class);
+            File mockMappingsDir = mock(File.class);
+            when(mockRepoPath.toFile()).thenReturn(mockMappingsDir);
+            when(mockMappingsDir.listFiles()).thenReturn(new File[] {});
+            when(gitService.cloneCardanoTokenRegistryGitRepository()).thenReturn(Optional.of(mockRepoPath));
+            when(gitService.getHeadCommitHash()).thenReturn(Optional.empty());
+
+            tokenMetadataSyncService.synchronizeDatabase();
+
+            verify(syncStateRepository, never()).save(any());
+            assertEquals(SyncStatusEnum.SYNC_DONE, tokenMetadataSyncService.getSyncStatus().getSyncStatus());
+        }
+
+        @Test
+        public void hashNotAdvanced_whenPartialFailure() {
+            when(syncStateRepository.findTopByOrderByIdDesc()).thenReturn(Optional.of(new OffChainSyncState(oldHash)));
+            Path mockRepoPath = mock(Path.class);
+            when(gitService.cloneCardanoTokenRegistryGitRepository()).thenReturn(Optional.of(mockRepoPath));
+            when(gitService.getHeadCommitHash()).thenReturn(Optional.of(newHash));
+
+            File mockFile = mock(File.class);
+            Path mockFilePath = mock(Path.class);
+            when(mockFilePath.toFile()).thenReturn(mockFile);
+            when(gitService.getChangedFiles(oldHash, newHash)).thenReturn(List.of(mockFilePath));
+
+            Mapping mockMapping = new Mapping("test", null, null, null, null, null, null, null);
+            when(tokenMappingService.parseMappings(mockFile)).thenReturn(Optional.of(mockMapping));
+            when(gitService.getMappingDetails(mockFile))
+                    .thenReturn(Optional.of(new MappingUpdateDetails("author", LocalDateTime.now())));
+            when(tokenMetadataService.insertMapping(any(), any(), any()))
+                    .thenThrow(new RuntimeException("DB error"));
+
+            tokenMetadataSyncService.synchronizeDatabase();
+
+            verify(syncStateRepository, never()).save(any());
+            assertEquals(SyncStatusEnum.SYNC_DONE, tokenMetadataSyncService.getSyncStatus().getSyncStatus());
         }
     }
 }

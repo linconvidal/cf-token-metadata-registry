@@ -18,6 +18,7 @@ import java.nio.file.Path;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.stream.Stream;
 
 @Service
@@ -61,6 +62,10 @@ public class TokenMetadataSyncService {
         if (repoPathOpt.isPresent()) {
 
             Optional<String> newHashOpt = gitService.getHeadCommitHash();
+            if (newHashOpt.isEmpty()) {
+                log.warn("Could not determine HEAD commit hash after cloning. Falling back to full sync without hash tracking.");
+            }
+
             if (newHashOpt.isPresent() && newHashOpt.get().equals(lastHash)) {
                 log.info("No new commits since last sync. Skipping processing.");
                 syncStatus.setSyncStatus(SyncStatusEnum.SYNC_DONE);
@@ -68,18 +73,9 @@ public class TokenMetadataSyncService {
                 return;
             }
 
-            List<File> filesToProcess;
-            if (lastHash != null && newHashOpt.isPresent()) {
-                log.info("Incremental sync from {} to {}", lastHash, newHashOpt.get());
-                filesToProcess = gitService.getChangedFiles(lastHash, newHashOpt.get()).stream()
-                        .map(Path::toFile).toList();
-                log.info("Incremental sync: processing {} changed file(s)", filesToProcess.size());
-            } else {
-                log.info("Full sync: processing all files");
-                File mappings = repoPathOpt.get().toFile();
-                filesToProcess = Optional.ofNullable(mappings.listFiles())
-                        .map(Arrays::asList).orElse(List.of());
-            }
+            List<File> filesToProcess = resolveFilesToProcess(lastHash, newHashOpt, repoPathOpt.get());
+
+            AtomicBoolean hasFailures = new AtomicBoolean(false);
 
             filesToProcess.stream()
                     .flatMap(mappingFile -> {
@@ -106,12 +102,15 @@ public class TokenMetadataSyncService {
                                 tokenMetadataService.insertLogo(mappingDetails.mapping());
                             }
                         } catch (Exception e) {
+                            hasFailures.set(true);
                             log.warn("Failed to process token '{}': {}. Continuing with next token.",
                                     mappingDetails.mapping().subject(), e.getMessage());
                         }
                     });
 
-            if (newHashOpt.isPresent()) {
+            if (hasFailures.get()) {
+                log.warn("Some mappings failed to process. Commit hash will not be advanced so failed mappings are retried on next sync.");
+            } else if (newHashOpt.isPresent()) {
                 OffChainSyncState offChainSyncStateToSave = lastSyncState.orElse(new OffChainSyncState());
                 offChainSyncStateToSave.setLastCommitHash(newHashOpt.get());
                 syncStateRepository.save(offChainSyncStateToSave);
@@ -125,6 +124,21 @@ public class TokenMetadataSyncService {
             syncStatus.setSyncStatus(SyncStatusEnum.SYNC_ERROR);
         }
 
+    }
+
+    private List<File> resolveFilesToProcess(String lastHash, Optional<String> newHashOpt, Path repoPath) {
+        if (lastHash != null && newHashOpt.isPresent()) {
+            log.info("Incremental sync from {} to {}", lastHash, newHashOpt.get());
+            List<File> files = gitService.getChangedFiles(lastHash, newHashOpt.get()).stream()
+                    .map(Path::toFile).toList();
+            log.info("Incremental sync: processing {} changed file(s)", files.size());
+            return files;
+        }
+
+        log.info("Full sync: processing all files");
+        File mappings = repoPath.toFile();
+        return Optional.ofNullable(mappings.listFiles())
+                .map(Arrays::asList).orElse(List.of());
     }
 
 }
