@@ -47,16 +47,18 @@ jobs:
       - name: Install yaci-devkit
         run: npm install -g @bloxbean/yaci-devkit
 
-      - name: Start yaci devnet
+      - name: Start Yaci DevKit
+        run: nohup yaci-devkit up --enable-yaci-store &
+
+      - name: Wait for devnet to be ready
         run: |
-          nohup yaci-devkit up --enable-yaci-store &
-          echo "Waiting for yaci-store API to be ready..."
-          for i in $(seq 1 60); do
-            if curl -sf http://localhost:8080/api/v1/blocks > /dev/null 2>&1; then
-              echo "Yaci-store API is ready."
+          echo "Waiting for Store API to be ready..."
+          for i in $(seq 1 30); do
+            if nc -z localhost 8080 2>/dev/null; then
+              echo "Store API is ready!"
               break
             fi
-            echo "Attempt $i/60 - waiting 5s..."
+            echo "Attempt $i/30 - Store API not ready yet, waiting..."
             sleep 5
           done
 
