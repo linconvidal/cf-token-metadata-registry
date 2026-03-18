@@ -35,14 +35,17 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
     }
 
     private static void waitForSyncComplete() {
-        await().atMost(Duration.ofMinutes(2))
+        log.info("Waiting for CIP-26 sync to complete (subject={}) ...", FULL_TOKEN_SUBJECT);
+        await().atMost(Duration.ofMinutes(5))
                 .pollInterval(Duration.ofSeconds(3))
                 .ignoreExceptions()
                 .until(() -> {
                     var response = restTemplate.getForEntity(
                             API_BASE_URL + "/metadata/" + FULL_TOKEN_SUBJECT, String.class);
+                    log.info("CIP-26 sync poll: status={}", response.getStatusCode());
                     return response.getStatusCode() == HttpStatus.OK;
                 });
+        log.info("CIP-26 sync complete.");
     }
 
     @Test

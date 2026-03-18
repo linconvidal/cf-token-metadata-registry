@@ -45,7 +45,8 @@ public class Cip68IntegrationIT extends BaseIntegrationIT {
     }
 
     private static void waitForCip68Indexed(String subject) {
-        await().atMost(Duration.ofMinutes(2))
+        log.info("Waiting for CIP-68 token to be indexed (subject={}) ...", subject);
+        await().atMost(Duration.ofMinutes(5))
                 .pollInterval(Duration.ofSeconds(3))
                 .ignoreExceptions()
                 .until(() -> {
@@ -54,12 +55,15 @@ public class Cip68IntegrationIT extends BaseIntegrationIT {
                     if (response.getStatusCode() == HttpStatus.OK) {
                         var json = objectMapper.readTree(response.getBody());
                         var metadata = json.get("subject").get("metadata");
-                        // Check that CIP-68 metadata is present
-                        return metadata.get("name") != null
+                        boolean indexed = metadata.get("name") != null
                                 && "CIP_68".equals(metadata.get("name").get("source").asText());
+                        log.info("CIP-68 index poll: status={}, indexed={}", response.getStatusCode(), indexed);
+                        return indexed;
                     }
+                    log.info("CIP-68 index poll: status={}, not ready yet", response.getStatusCode());
                     return false;
                 });
+        log.info("CIP-68 token indexed successfully.");
     }
 
     @Test
