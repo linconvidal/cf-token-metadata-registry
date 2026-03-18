@@ -3,6 +3,8 @@ package org.cardanofoundation.tokenmetadata.registry.it;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
@@ -13,8 +15,9 @@ import org.springframework.web.client.HttpClientErrorException;
 
 import java.time.Duration;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.awaitility.Awaitility.await;
-import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Integration tests for CIP-26 (offchain metadata) flow.
@@ -51,134 +54,251 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
         log.info("CIP-26 sync complete.");
     }
 
-    @Test
-    void v1_queryKnownSubject_shouldReturnAllProperties() throws Exception {
-        ResponseEntity<String> response = restTemplate.getForEntity(
-                API_BASE_URL + "/metadata/" + FULL_TOKEN_SUBJECT, String.class);
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-
-        JsonNode json = objectMapper.readTree(response.getBody());
-        assertEquals(FULL_TOKEN_SUBJECT, json.get("subject").asText());
-        assertEquals("Test Token Full", json.get("name").get("value").asText());
-        assertEquals("TSTF", json.get("ticker").get("value").asText());
-        assertEquals("A test token with all properties for integration testing", json.get("description").get("value").asText());
-        assertEquals("https://test.cardanofoundation.org", json.get("url").get("value").asText());
-        assertEquals("6", json.get("decimals").get("value").asText());
-    }
-
-    @Test
-    void v1_queryUnknownSubject_shouldReturnNoContent() {
-        ResponseEntity<String> response = restTemplate.getForEntity(
-                API_BASE_URL + "/metadata/" + UNKNOWN_SUBJECT, String.class);
-
-        assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
-    }
-
-    @Test
-    void v2_queryKnownSubject_shouldReturnWithSource() throws Exception {
-        ResponseEntity<String> response = restTemplate.getForEntity(
-                API_BASE_URL + "/api/v2/subjects/" + FULL_TOKEN_SUBJECT, String.class);
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-
-        JsonNode json = objectMapper.readTree(response.getBody());
-        JsonNode subject = json.get("subject");
-        assertEquals(FULL_TOKEN_SUBJECT, subject.get("subject").asText());
-
-        JsonNode metadata = subject.get("metadata");
-        assertEquals("Test Token Full", metadata.get("name").get("value").asText());
-        assertEquals("CIP_26", metadata.get("name").get("source").asText());
-    }
-
-    @Test
-    void v2_queryUnknownSubject_shouldReturn404() {
-        HttpClientErrorException.NotFound ex = assertThrows(HttpClientErrorException.NotFound.class,
-                () -> restTemplate.getForEntity(
-                        API_BASE_URL + "/api/v2/subjects/" + UNKNOWN_SUBJECT, String.class));
-
-        assertEquals(HttpStatus.NOT_FOUND, ex.getStatusCode());
-    }
-
-    @Test
-    void v2_queryMinimalToken_shouldReturnOnlyNameAndDescription() throws Exception {
-        ResponseEntity<String> response = restTemplate.getForEntity(
-                API_BASE_URL + "/api/v2/subjects/" + MINIMAL_TOKEN_SUBJECT, String.class);
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-
-        JsonNode json = objectMapper.readTree(response.getBody());
-        JsonNode metadata = json.get("subject").get("metadata");
-        assertEquals("Test Token Minimal", metadata.get("name").get("value").asText());
-        assertEquals("A minimal test token with only required properties", metadata.get("description").get("value").asText());
-        assertTrue(metadata.get("ticker") == null || metadata.get("ticker").isNull());
-    }
-
-    @Test
-    void v2_batchQuery_shouldReturnOnlyExistingSubjects() throws Exception {
-        String requestBody = String.format(
-                "{\"subjects\": [\"%s\", \"%s\"], \"properties\": []}",
-                FULL_TOKEN_SUBJECT, UNKNOWN_SUBJECT);
-
+    private static ResponseEntity<String> postJson(String url, String body) {
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<String> request = new HttpEntity<>(requestBody, headers);
-
-        ResponseEntity<String> response = restTemplate.postForEntity(
-                API_BASE_URL + "/api/v2/subjects/query", request, String.class);
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-
-        JsonNode json = objectMapper.readTree(response.getBody());
-        JsonNode subjects = json.get("subjects");
-        assertEquals(1, subjects.size());
-        assertEquals(FULL_TOKEN_SUBJECT, subjects.get(0).get("subject").asText());
+        return restTemplate.postForEntity(url, new HttpEntity<>(body, headers), String.class);
     }
 
-    @Test
-    void v2_queryWithPropertyFilter_shouldReturnOnlyRequestedProperties() throws Exception {
-        ResponseEntity<String> response = restTemplate.getForEntity(
-                API_BASE_URL + "/api/v2/subjects/" + FULL_TOKEN_SUBJECT + "?property=name", String.class);
+    @Nested
+    @DisplayName("V1 - Single subject query")
+    class V1SingleSubject {
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        @Test
+        void knownSubject_returnsAllProperties() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/metadata/" + FULL_TOKEN_SUBJECT, String.class);
 
-        JsonNode json = objectMapper.readTree(response.getBody());
-        JsonNode metadata = json.get("subject").get("metadata");
-        assertNotNull(metadata.get("name"));
-        assertEquals("Test Token Full", metadata.get("name").get("value").asText());
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode json = objectMapper.readTree(response.getBody());
+            assertThat(json.get("subject").asText()).isEqualTo(FULL_TOKEN_SUBJECT);
+            assertThat(json.get("name").get("value").asText()).isEqualTo("Test Token Full");
+            assertThat(json.get("ticker").get("value").asText()).isEqualTo("TSTF");
+            assertThat(json.get("description").get("value").asText())
+                    .isEqualTo("A test token with all properties for integration testing");
+            assertThat(json.get("url").get("value").asText())
+                    .isEqualTo("https://test.cardanofoundation.org");
+            assertThat(json.get("decimals").get("value").asText()).isEqualTo("6");
+        }
+
+        @Test
+        void unknownSubject_returnsNoContent() {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/metadata/" + UNKNOWN_SUBJECT, String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NO_CONTENT);
+        }
     }
 
-    @Test
-    void v1_batchQuery_shouldReturnOnlyExistingSubjects() throws Exception {
-        String requestBody = String.format(
-                "{\"subjects\": [\"%s\", \"%s\"], \"properties\": []}",
-                FULL_TOKEN_SUBJECT, UNKNOWN_SUBJECT);
+    @Nested
+    @DisplayName("V1 - Property filter")
+    class V1PropertyFilter {
 
-        HttpHeaders headers = new HttpHeaders();
-        headers.setContentType(MediaType.APPLICATION_JSON);
-        HttpEntity<String> request = new HttpEntity<>(requestBody, headers);
+        @Test
+        void singleProperty_returnsOnlyThatProperty() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/metadata/" + FULL_TOKEN_SUBJECT + "/properties/ticker", String.class);
 
-        ResponseEntity<String> response = restTemplate.postForEntity(
-                API_BASE_URL + "/metadata/query", request, String.class);
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-
-        JsonNode json = objectMapper.readTree(response.getBody());
-        JsonNode subjects = json.get("subjects");
-        assertEquals(1, subjects.size());
-        assertEquals(FULL_TOKEN_SUBJECT, subjects.get(0).get("subject").asText());
-        assertEquals("Test Token Full", subjects.get(0).get("name").get("value").asText());
+            JsonNode json = objectMapper.readTree(response.getBody());
+            assertThat(json.get("subject").asText()).isEqualTo(FULL_TOKEN_SUBJECT);
+            assertThat(json.get("ticker").get("value").asText()).isEqualTo("TSTF");
+        }
     }
 
-    @Test
-    void v1_querySubjectProperty_shouldReturnSingleProperty() throws Exception {
-        ResponseEntity<String> response = restTemplate.getForEntity(
-                API_BASE_URL + "/metadata/" + FULL_TOKEN_SUBJECT + "/properties/ticker", String.class);
+    @Nested
+    @DisplayName("V1 - Batch query")
+    class V1BatchQuery {
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        @Test
+        void mixedSubjects_returnsOnlyExisting() throws Exception {
+            String body = String.format(
+                    "{\"subjects\": [\"%s\", \"%s\"], \"properties\": []}",
+                    FULL_TOKEN_SUBJECT, UNKNOWN_SUBJECT);
 
-        JsonNode json = objectMapper.readTree(response.getBody());
-        assertEquals(FULL_TOKEN_SUBJECT, json.get("subject").asText());
-        assertEquals("TSTF", json.get("ticker").get("value").asText());
+            ResponseEntity<String> response = postJson(API_BASE_URL + "/metadata/query", body);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode subjects = objectMapper.readTree(response.getBody()).get("subjects");
+            assertThat(subjects).hasSize(1);
+            assertThat(subjects.get(0).get("subject").asText()).isEqualTo(FULL_TOKEN_SUBJECT);
+            assertThat(subjects.get(0).get("name").get("value").asText()).isEqualTo("Test Token Full");
+        }
+    }
+
+    @Nested
+    @DisplayName("V2 - Single subject query")
+    class V2SingleSubject {
+
+        @Test
+        void knownSubject_returnsMetadataWithSource() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/api/v2/subjects/" + FULL_TOKEN_SUBJECT, String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode json = objectMapper.readTree(response.getBody());
+            JsonNode subject = json.get("subject");
+            assertThat(subject.get("subject").asText()).isEqualTo(FULL_TOKEN_SUBJECT);
+
+            JsonNode metadata = subject.get("metadata");
+            assertThat(metadata.get("name").get("value").asText()).isEqualTo("Test Token Full");
+            assertThat(metadata.get("name").get("source").asText()).isEqualTo("CIP_26");
+        }
+
+        @Test
+        void unknownSubject_returns404() {
+            assertThatThrownBy(() -> restTemplate.getForEntity(
+                    API_BASE_URL + "/api/v2/subjects/" + UNKNOWN_SUBJECT, String.class))
+                    .isInstanceOf(HttpClientErrorException.NotFound.class);
+        }
+
+        @Test
+        void minimalToken_returnsOnlyNameAndDescription() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/api/v2/subjects/" + MINIMAL_TOKEN_SUBJECT, String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode metadata = objectMapper.readTree(response.getBody()).get("subject").get("metadata");
+            assertThat(metadata.get("name").get("value").asText()).isEqualTo("Test Token Minimal");
+            assertThat(metadata.get("description").get("value").asText())
+                    .isEqualTo("A minimal test token with only required properties");
+            JsonNode ticker = metadata.get("ticker");
+            assertThat(ticker == null || ticker.isNull()).isTrue();
+        }
+
+        @Test
+        void defaultQueryPriority_returnsCip68ThenCip26() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/api/v2/subjects/" + FULL_TOKEN_SUBJECT, String.class);
+
+            JsonNode queryPriority = objectMapper.readTree(response.getBody()).get("queryPriority");
+            assertThat(queryPriority.get(0).asText()).isEqualTo("CIP_68");
+            assertThat(queryPriority.get(1).asText()).isEqualTo("CIP_26");
+        }
+    }
+
+    @Nested
+    @DisplayName("V2 - Property filter")
+    class V2PropertyFilter {
+
+        @Test
+        void singleProperty_returnsOnlyRequested() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/api/v2/subjects/" + FULL_TOKEN_SUBJECT + "?property=name",
+                    String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode metadata = objectMapper.readTree(response.getBody()).get("subject").get("metadata");
+            assertThat(metadata.get("name")).isNotNull();
+            assertThat(metadata.get("name").get("value").asText()).isEqualTo("Test Token Full");
+        }
+
+        @Test
+        void multipleProperties_returnsOnlyRequested() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/api/v2/subjects/" + FULL_TOKEN_SUBJECT
+                            + "?property=name&property=ticker",
+                    String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode metadata = objectMapper.readTree(response.getBody()).get("subject").get("metadata");
+            assertThat(metadata.get("name").get("value").asText()).isEqualTo("Test Token Full");
+            assertThat(metadata.get("ticker").get("value").asText()).isEqualTo("TSTF");
+        }
+    }
+
+    @Nested
+    @DisplayName("V2 - CIPs details")
+    class V2CipsDetails {
+
+        @Test
+        void showCipsDetails_returnsCip26StandardBlock() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/api/v2/subjects/" + FULL_TOKEN_SUBJECT
+                            + "?show_cips_details=true",
+                    String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode standards = objectMapper.readTree(response.getBody()).get("subject").get("standards");
+            assertThat(standards).isNotNull();
+            assertThat(standards.get("cip26")).isNotNull();
+            assertThat(standards.get("cip26").get("name").get("value").asText())
+                    .isEqualTo("Test Token Full");
+            // CIP-26-only token should not have cip68 standard
+            JsonNode cip68 = standards.get("cip68");
+            assertThat(cip68 == null || cip68.isNull()).isTrue();
+        }
+    }
+
+    @Nested
+    @DisplayName("V2 - Batch query")
+    class V2BatchQuery {
+
+        @Test
+        void mixedSubjects_returnsOnlyExisting() throws Exception {
+            String body = String.format(
+                    "{\"subjects\": [\"%s\", \"%s\"], \"properties\": []}",
+                    FULL_TOKEN_SUBJECT, UNKNOWN_SUBJECT);
+
+            ResponseEntity<String> response = postJson(API_BASE_URL + "/api/v2/subjects/query", body);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode json = objectMapper.readTree(response.getBody());
+            JsonNode subjects = json.get("subjects");
+            assertThat(subjects).hasSize(1);
+            assertThat(subjects.get(0).get("subject").asText()).isEqualTo(FULL_TOKEN_SUBJECT);
+        }
+
+        @Test
+        void allUnknownSubjects_returnsEmptyList() throws Exception {
+            String body = String.format(
+                    "{\"subjects\": [\"%s\"], \"properties\": []}", UNKNOWN_SUBJECT);
+
+            ResponseEntity<String> response = postJson(API_BASE_URL + "/api/v2/subjects/query", body);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode subjects = objectMapper.readTree(response.getBody()).get("subjects");
+            assertThat(subjects).isEmpty();
+        }
+
+        @Test
+        void multipleKnownSubjects_returnsAll() throws Exception {
+            String body = String.format(
+                    "{\"subjects\": [\"%s\", \"%s\"], \"properties\": []}",
+                    FULL_TOKEN_SUBJECT, MINIMAL_TOKEN_SUBJECT);
+
+            ResponseEntity<String> response = postJson(API_BASE_URL + "/api/v2/subjects/query", body);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode subjects = objectMapper.readTree(response.getBody()).get("subjects");
+            assertThat(subjects).hasSize(2);
+        }
+
+        @Test
+        void withPropertyFilter_returnsOnlyRequestedProperties() throws Exception {
+            String body = String.format(
+                    "{\"subjects\": [\"%s\"], \"properties\": [\"name\", \"ticker\"]}",
+                    FULL_TOKEN_SUBJECT);
+
+            ResponseEntity<String> response = postJson(API_BASE_URL + "/api/v2/subjects/query", body);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode subject = objectMapper.readTree(response.getBody()).get("subjects").get(0);
+            JsonNode metadata = subject.get("metadata");
+            assertThat(metadata.get("name").get("value").asText()).isEqualTo("Test Token Full");
+            assertThat(metadata.get("ticker").get("value").asText()).isEqualTo("TSTF");
+        }
     }
 }

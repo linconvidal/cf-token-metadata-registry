@@ -3,14 +3,16 @@ package org.cardanofoundation.tokenmetadata.registry.it;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.time.Duration;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
-import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Integration tests for health and sync status endpoints.
@@ -41,24 +43,36 @@ public class SyncStatusIntegrationIT extends BaseIntegrationIT {
         log.info("Sync complete, running sync status tests.");
     }
 
-    @Test
-    void health_afterSync_shouldReportSyncedAndDone() throws Exception {
-        ResponseEntity<String> response = restTemplate.getForEntity(API_BASE_URL + "/health", String.class);
+    @Nested
+    @DisplayName("Health endpoint")
+    class HealthEndpoint {
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        @Test
+        void afterSync_reportsSyncedAndDone() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/health", String.class);
 
-        JsonNode json = objectMapper.readTree(response.getBody());
-        assertTrue(json.get("synced").asBoolean(), "synced should be true after initial sync");
-        assertEquals("Sync done", json.get("syncStatus").asText());
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode json = objectMapper.readTree(response.getBody());
+            assertThat(json.get("synced").asBoolean()).isTrue();
+            assertThat(json.get("syncStatus").asText()).isEqualTo("Sync done");
+        }
     }
 
-    @Test
-    void actuatorHealth_shouldBeUp() throws Exception {
-        ResponseEntity<String> response = restTemplate.getForEntity(API_BASE_URL + "/actuator/health", String.class);
+    @Nested
+    @DisplayName("Actuator health")
+    class ActuatorHealth {
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+        @Test
+        void shouldBeUp() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/actuator/health", String.class);
 
-        JsonNode json = objectMapper.readTree(response.getBody());
-        assertEquals("UP", json.get("status").asText());
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode json = objectMapper.readTree(response.getBody());
+            assertThat(json.get("status").asText()).isEqualTo("UP");
+        }
     }
 }

@@ -4,14 +4,16 @@ import com.bloxbean.cardano.client.backend.blockfrost.service.BFBackendService;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
 import java.time.Duration;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
-import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * Integration tests for CIP-68 (on-chain metadata) flow.
@@ -69,67 +71,78 @@ public class Cip68IntegrationIT extends BaseIntegrationIT {
         log.info("CIP-68 token indexed successfully.");
     }
 
-    @Test
-    void v2_queryCip68Subject_shouldReturnOnChainMetadata() throws Exception {
-        String subject = mintResult.policyId() + mintResult.assetNameHex();
-
-        ResponseEntity<String> response = restTemplate.getForEntity(
-                API_BASE_URL + "/api/v2/subjects/" + subject, String.class);
-
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-
-        JsonNode json = objectMapper.readTree(response.getBody());
-        JsonNode subjectNode = json.get("subject");
-        assertEquals(subject, subjectNode.get("subject").asText());
-
-        JsonNode metadata = subjectNode.get("metadata");
-        assertEquals(TOKEN_NAME, metadata.get("name").get("value").asText());
-        assertEquals("CIP_68", metadata.get("name").get("source").asText());
-        assertEquals(TOKEN_DESCRIPTION, metadata.get("description").get("value").asText());
-        assertEquals("CIP_68", metadata.get("description").get("source").asText());
-        assertEquals(TOKEN_TICKER, metadata.get("ticker").get("value").asText());
-        assertEquals(TOKEN_DECIMALS, metadata.get("decimals").get("value").asInt());
+    private static String subject() {
+        return mintResult.policyId() + mintResult.assetNameHex();
     }
 
-    @Test
-    void v2_queryCip68Subject_withCipsDetails_shouldReturnStandards() throws Exception {
-        String subject = mintResult.policyId() + mintResult.assetNameHex();
+    @Nested
+    @DisplayName("V2 - On-chain metadata query")
+    class V2OnChainMetadata {
 
-        ResponseEntity<String> response = restTemplate.getForEntity(
-                API_BASE_URL + "/api/v2/subjects/" + subject + "?show_cips_details=true", String.class);
+        @Test
+        void returnsAllMetadataFields() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/api/v2/subjects/" + subject(), String.class);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        JsonNode json = objectMapper.readTree(response.getBody());
-        JsonNode standards = json.get("subject").get("standards");
-        assertNotNull(standards, "standards block should be present when show_cips_details=true");
+            JsonNode json = objectMapper.readTree(response.getBody());
+            JsonNode subjectNode = json.get("subject");
+            assertThat(subjectNode.get("subject").asText()).isEqualTo(subject());
 
-        JsonNode cip68 = standards.get("cip68");
-        assertNotNull(cip68, "cip68 standard should be present");
-        assertEquals(TOKEN_NAME, cip68.get("name").asText());
-        assertEquals(TOKEN_DESCRIPTION, cip68.get("description").asText());
+            JsonNode metadata = subjectNode.get("metadata");
+            assertThat(metadata.get("name").get("value").asText()).isEqualTo(TOKEN_NAME);
+            assertThat(metadata.get("name").get("source").asText()).isEqualTo("CIP_68");
+            assertThat(metadata.get("description").get("value").asText()).isEqualTo(TOKEN_DESCRIPTION);
+            assertThat(metadata.get("description").get("source").asText()).isEqualTo("CIP_68");
+            assertThat(metadata.get("ticker").get("value").asText()).isEqualTo(TOKEN_TICKER);
+            assertThat(metadata.get("decimals").get("value").asInt()).isEqualTo(TOKEN_DECIMALS);
+        }
     }
 
-    @Test
-    void v2_queryCip68Subject_withCip26Priority_shouldStillReturnCip68Data() throws Exception {
-        // When CIP_26 is higher priority, CIP-68 data should still be returned if no CIP-26 data exists
-        String subject = mintResult.policyId() + mintResult.assetNameHex();
+    @Nested
+    @DisplayName("V2 - CIPs details")
+    class V2CipsDetails {
 
-        ResponseEntity<String> response = restTemplate.getForEntity(
-                API_BASE_URL + "/api/v2/subjects/" + subject + "?query_priority=CIP_26&query_priority=CIP_68",
-                String.class);
+        @Test
+        void showCipsDetails_returnsCip68StandardBlock() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/api/v2/subjects/" + subject() + "?show_cips_details=true",
+                    String.class);
 
-        assertEquals(HttpStatus.OK, response.getStatusCode());
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-        JsonNode json = objectMapper.readTree(response.getBody());
-        JsonNode metadata = json.get("subject").get("metadata");
-        // Since there's no CIP-26 data for this token, CIP-68 data should be used
-        assertEquals(TOKEN_NAME, metadata.get("name").get("value").asText());
-        assertEquals("CIP_68", metadata.get("name").get("source").asText());
+            JsonNode standards = objectMapper.readTree(response.getBody()).get("subject").get("standards");
+            assertThat(standards).isNotNull();
 
-        // Query priority should reflect the requested order
-        JsonNode queryPriority = json.get("queryPriority");
-        assertEquals("CIP_26", queryPriority.get(0).asText());
-        assertEquals("CIP_68", queryPriority.get(1).asText());
+            JsonNode cip68 = standards.get("cip68");
+            assertThat(cip68).isNotNull();
+            assertThat(cip68.get("name").asText()).isEqualTo(TOKEN_NAME);
+            assertThat(cip68.get("description").asText()).isEqualTo(TOKEN_DESCRIPTION);
+        }
+    }
+
+    @Nested
+    @DisplayName("V2 - Query priority")
+    class V2QueryPriority {
+
+        @Test
+        void cip26Priority_fallsBackToCip68WhenNoCip26Data() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/api/v2/subjects/" + subject()
+                            + "?query_priority=CIP_26&query_priority=CIP_68",
+                    String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode json = objectMapper.readTree(response.getBody());
+            JsonNode metadata = json.get("subject").get("metadata");
+            assertThat(metadata.get("name").get("value").asText()).isEqualTo(TOKEN_NAME);
+            assertThat(metadata.get("name").get("source").asText()).isEqualTo("CIP_68");
+
+            JsonNode queryPriority = json.get("queryPriority");
+            assertThat(queryPriority.get(0).asText()).isEqualTo("CIP_26");
+            assertThat(queryPriority.get(1).asText()).isEqualTo("CIP_68");
+        }
     }
 }
