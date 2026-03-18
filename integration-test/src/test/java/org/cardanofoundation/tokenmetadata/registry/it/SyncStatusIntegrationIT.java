@@ -1,9 +1,11 @@
 package org.cardanofoundation.tokenmetadata.registry.it;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 
 import java.time.Duration;
 
@@ -31,7 +33,7 @@ public class SyncStatusIntegrationIT extends BaseIntegrationIT {
                 .pollInterval(Duration.ofSeconds(3))
                 .ignoreExceptions()
                 .until(() -> {
-                    var response = restTemplate.getForEntity(
+                    ResponseEntity<String> response = restTemplate.getForEntity(
                             API_BASE_URL + "/metadata/" + KNOWN_SUBJECT, String.class);
                     log.info("Sync status test - sync poll: status={}", response.getStatusCode());
                     return response.getStatusCode() == HttpStatus.OK;
@@ -41,22 +43,22 @@ public class SyncStatusIntegrationIT extends BaseIntegrationIT {
 
     @Test
     void health_afterSync_shouldReportSyncedAndDone() throws Exception {
-        var response = restTemplate.getForEntity(API_BASE_URL + "/health", String.class);
+        ResponseEntity<String> response = restTemplate.getForEntity(API_BASE_URL + "/health", String.class);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        var json = objectMapper.readTree(response.getBody());
+        JsonNode json = objectMapper.readTree(response.getBody());
         assertTrue(json.get("synced").asBoolean(), "synced should be true after initial sync");
         assertEquals("Sync done", json.get("syncStatus").asText());
     }
 
     @Test
     void actuatorHealth_shouldBeUp() throws Exception {
-        var response = restTemplate.getForEntity(API_BASE_URL + "/actuator/health", String.class);
+        ResponseEntity<String> response = restTemplate.getForEntity(API_BASE_URL + "/actuator/health", String.class);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        var json = objectMapper.readTree(response.getBody());
+        JsonNode json = objectMapper.readTree(response.getBody());
         assertEquals("UP", json.get("status").asText());
     }
 }

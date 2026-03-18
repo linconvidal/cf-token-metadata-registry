@@ -1,5 +1,6 @@
 package org.cardanofoundation.tokenmetadata.registry.it;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -7,6 +8,8 @@ import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.HttpClientErrorException;
 
 import java.time.Duration;
 
@@ -40,7 +43,7 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
                 .pollInterval(Duration.ofSeconds(3))
                 .ignoreExceptions()
                 .until(() -> {
-                    var response = restTemplate.getForEntity(
+                    ResponseEntity<String> response = restTemplate.getForEntity(
                             API_BASE_URL + "/metadata/" + FULL_TOKEN_SUBJECT, String.class);
                     log.info("CIP-26 sync poll: status={}", response.getStatusCode());
                     return response.getStatusCode() == HttpStatus.OK;
@@ -50,12 +53,12 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
 
     @Test
     void v1_queryKnownSubject_shouldReturnAllProperties() throws Exception {
-        var response = restTemplate.getForEntity(
+        ResponseEntity<String> response = restTemplate.getForEntity(
                 API_BASE_URL + "/metadata/" + FULL_TOKEN_SUBJECT, String.class);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        var json = objectMapper.readTree(response.getBody());
+        JsonNode json = objectMapper.readTree(response.getBody());
         assertEquals(FULL_TOKEN_SUBJECT, json.get("subject").asText());
         assertEquals("Test Token Full", json.get("name").get("value").asText());
         assertEquals("TSTF", json.get("ticker").get("value").asText());
@@ -66,7 +69,7 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
 
     @Test
     void v1_queryUnknownSubject_shouldReturnNoContent() {
-        var response = restTemplate.getForEntity(
+        ResponseEntity<String> response = restTemplate.getForEntity(
                 API_BASE_URL + "/metadata/" + UNKNOWN_SUBJECT, String.class);
 
         assertEquals(HttpStatus.NO_CONTENT, response.getStatusCode());
@@ -74,23 +77,23 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
 
     @Test
     void v2_queryKnownSubject_shouldReturnWithSource() throws Exception {
-        var response = restTemplate.getForEntity(
+        ResponseEntity<String> response = restTemplate.getForEntity(
                 API_BASE_URL + "/api/v2/subjects/" + FULL_TOKEN_SUBJECT, String.class);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        var json = objectMapper.readTree(response.getBody());
-        var subject = json.get("subject");
+        JsonNode json = objectMapper.readTree(response.getBody());
+        JsonNode subject = json.get("subject");
         assertEquals(FULL_TOKEN_SUBJECT, subject.get("subject").asText());
 
-        var metadata = subject.get("metadata");
+        JsonNode metadata = subject.get("metadata");
         assertEquals("Test Token Full", metadata.get("name").get("value").asText());
         assertEquals("CIP_26", metadata.get("name").get("source").asText());
     }
 
     @Test
     void v2_queryUnknownSubject_shouldReturn404() {
-        var ex = assertThrows(org.springframework.web.client.HttpClientErrorException.NotFound.class,
+        HttpClientErrorException.NotFound ex = assertThrows(HttpClientErrorException.NotFound.class,
                 () -> restTemplate.getForEntity(
                         API_BASE_URL + "/api/v2/subjects/" + UNKNOWN_SUBJECT, String.class));
 
@@ -99,13 +102,13 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
 
     @Test
     void v2_queryMinimalToken_shouldReturnOnlyNameAndDescription() throws Exception {
-        var response = restTemplate.getForEntity(
+        ResponseEntity<String> response = restTemplate.getForEntity(
                 API_BASE_URL + "/api/v2/subjects/" + MINIMAL_TOKEN_SUBJECT, String.class);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        var json = objectMapper.readTree(response.getBody());
-        var metadata = json.get("subject").get("metadata");
+        JsonNode json = objectMapper.readTree(response.getBody());
+        JsonNode metadata = json.get("subject").get("metadata");
         assertEquals("Test Token Minimal", metadata.get("name").get("value").asText());
         assertEquals("A minimal test token with only required properties", metadata.get("description").get("value").asText());
         assertTrue(metadata.get("ticker") == null || metadata.get("ticker").isNull());
@@ -113,34 +116,34 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
 
     @Test
     void v2_batchQuery_shouldReturnOnlyExistingSubjects() throws Exception {
-        var requestBody = String.format(
+        String requestBody = String.format(
                 "{\"subjects\": [\"%s\", \"%s\"], \"properties\": []}",
                 FULL_TOKEN_SUBJECT, UNKNOWN_SUBJECT);
 
-        var headers = new HttpHeaders();
+        HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
-        var request = new HttpEntity<>(requestBody, headers);
+        HttpEntity<String> request = new HttpEntity<>(requestBody, headers);
 
-        var response = restTemplate.postForEntity(
+        ResponseEntity<String> response = restTemplate.postForEntity(
                 API_BASE_URL + "/api/v2/subjects/query", request, String.class);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        var json = objectMapper.readTree(response.getBody());
-        var subjects = json.get("subjects");
+        JsonNode json = objectMapper.readTree(response.getBody());
+        JsonNode subjects = json.get("subjects");
         assertEquals(1, subjects.size());
         assertEquals(FULL_TOKEN_SUBJECT, subjects.get(0).get("subject").asText());
     }
 
     @Test
     void v2_queryWithPropertyFilter_shouldReturnOnlyRequestedProperties() throws Exception {
-        var response = restTemplate.getForEntity(
+        ResponseEntity<String> response = restTemplate.getForEntity(
                 API_BASE_URL + "/api/v2/subjects/" + FULL_TOKEN_SUBJECT + "?property=name", String.class);
 
         assertEquals(HttpStatus.OK, response.getStatusCode());
 
-        var json = objectMapper.readTree(response.getBody());
-        var metadata = json.get("subject").get("metadata");
+        JsonNode json = objectMapper.readTree(response.getBody());
+        JsonNode metadata = json.get("subject").get("metadata");
         assertNotNull(metadata.get("name"));
         assertEquals("Test Token Full", metadata.get("name").get("value").asText());
     }

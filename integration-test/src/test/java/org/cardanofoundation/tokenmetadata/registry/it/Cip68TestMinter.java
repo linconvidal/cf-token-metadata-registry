@@ -3,6 +3,7 @@ package org.cardanofoundation.tokenmetadata.registry.it;
 import com.bloxbean.cardano.client.account.Account;
 import com.bloxbean.cardano.client.address.AddressProvider;
 import com.bloxbean.cardano.client.api.model.Result;
+import com.bloxbean.cardano.client.api.model.Utxo;
 import com.bloxbean.cardano.client.backend.api.BackendService;
 import com.bloxbean.cardano.client.cip.cip68.CIP68FT;
 import com.bloxbean.cardano.client.cip.cip68.CIP68ReferenceToken;
@@ -18,6 +19,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
 
 import java.math.BigInteger;
@@ -57,7 +59,7 @@ public class Cip68TestMinter {
     public MintResult mintCip68FungibleToken(String tokenName, String description,
                                               String ticker, int decimals,
                                               long userTokenQty) throws Exception {
-        var senderAddress = senderAccount.baseAddress();
+        String senderAddress = senderAccount.baseAddress();
 
         // Fund the sender and wait for UTXOs to appear
         topUpFund(senderAddress, 50000);
@@ -65,7 +67,7 @@ public class Cip68TestMinter {
                 .pollInterval(Duration.ofSeconds(2))
                 .ignoreExceptions()
                 .until(() -> {
-                    var utxos = backendService.getUtxoService().getUtxos(senderAddress, 1, 1);
+                    Result<List<Utxo>> utxos = backendService.getUtxoService().getUtxos(senderAddress, 1, 1);
                     boolean funded = utxos.isSuccessful() && !utxos.getValue().isEmpty();
                     log.info("Waiting for topup UTXOs: funded={}", funded);
                     return funded;
@@ -121,7 +123,7 @@ public class Cip68TestMinter {
 
             HttpHeaders headers = new HttpHeaders();
             headers.setContentType(MediaType.APPLICATION_JSON);
-            var response = restTemplate.postForEntity(url, new HttpEntity<>(json, headers), String.class);
+            ResponseEntity<String> response = restTemplate.postForEntity(url, new HttpEntity<>(json, headers), String.class);
 
             if (response.getStatusCode().is2xxSuccessful()) {
                 log.info("Funds topped up successfully for {}", address);
