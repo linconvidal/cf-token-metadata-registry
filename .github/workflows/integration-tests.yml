@@ -41,8 +41,8 @@ jobs:
         with:
           node-version: '20'
 
-      - name: Build project
-        run: mvn --batch-mode clean package -DskipTests
+      - name: Build and install project
+        run: mvn --batch-mode clean install -DskipTests
 
       - name: Install yaci-devkit
         run: npm install -g @bloxbean/yaci-devkit
