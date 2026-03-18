@@ -80,6 +80,10 @@ public class GitService {
 
     private boolean pullRebaseRepo() {
         try {
+            if (!hasRemote()) {
+                log.info("Local git repo has no remote configured, using as-is");
+                return true;
+            }
             var process = new ProcessBuilder()
                     .directory(getGitFolder())
                     .command("git", "pull", "--rebase")
@@ -91,6 +95,23 @@ public class GitService {
             log.warn("it was not possible to update repo. cloning from scratch", e);
             return false;
         }
+    }
+
+    private boolean hasRemote() {
+        try {
+            var process = new ProcessBuilder()
+                    .directory(getGitFolder())
+                    .command("git", "remote")
+                    .start();
+            var exitCode = process.waitFor();
+            if (exitCode == 0) {
+                BufferedReader reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
+                return reader.readLine() != null;
+            }
+        } catch (Exception e) {
+            log.warn("Failed to check git remotes", e);
+        }
+        return false;
     }
 
     private boolean isGitRepo() {
