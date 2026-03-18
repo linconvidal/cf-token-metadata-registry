@@ -287,17 +287,22 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
 
         @Test
         void withPropertyFilter_returnsOnlyRequestedProperties() throws Exception {
+            // name + description are required for a valid subject, so include them
             String body = String.format(
-                    "{\"subjects\": [\"%s\"], \"properties\": [\"name\", \"ticker\"]}",
+                    "{\"subjects\": [\"%s\"], \"properties\": [\"name\", \"description\", \"ticker\"]}",
                     FULL_TOKEN_SUBJECT);
 
             ResponseEntity<String> response = postJson(API_BASE_URL + "/api/v2/subjects/query", body);
 
             assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
 
-            JsonNode subject = objectMapper.readTree(response.getBody()).get("subjects").get(0);
-            JsonNode metadata = subject.get("metadata");
+            JsonNode subjects = objectMapper.readTree(response.getBody()).get("subjects");
+            assertThat(subjects).hasSize(1);
+
+            JsonNode metadata = subjects.get(0).get("metadata");
             assertThat(metadata.get("name").get("value").asText()).isEqualTo("Test Token Full");
+            assertThat(metadata.get("description").get("value").asText())
+                    .isEqualTo("A test token with all properties for integration testing");
             assertThat(metadata.get("ticker").get("value").asText()).isEqualTo("TSTF");
         }
     }
