@@ -147,4 +147,38 @@ public class Cip26IntegrationIT extends BaseIntegrationIT {
         assertNotNull(metadata.get("name"));
         assertEquals("Test Token Full", metadata.get("name").get("value").asText());
     }
+
+    @Test
+    void v1_batchQuery_shouldReturnOnlyExistingSubjects() throws Exception {
+        String requestBody = String.format(
+                "{\"subjects\": [\"%s\", \"%s\"], \"properties\": []}",
+                FULL_TOKEN_SUBJECT, UNKNOWN_SUBJECT);
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.setContentType(MediaType.APPLICATION_JSON);
+        HttpEntity<String> request = new HttpEntity<>(requestBody, headers);
+
+        ResponseEntity<String> response = restTemplate.postForEntity(
+                API_BASE_URL + "/metadata/query", request, String.class);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        JsonNode json = objectMapper.readTree(response.getBody());
+        JsonNode subjects = json.get("subjects");
+        assertEquals(1, subjects.size());
+        assertEquals(FULL_TOKEN_SUBJECT, subjects.get(0).get("subject").asText());
+        assertEquals("Test Token Full", subjects.get(0).get("name").get("value").asText());
+    }
+
+    @Test
+    void v1_querySubjectProperty_shouldReturnSingleProperty() throws Exception {
+        ResponseEntity<String> response = restTemplate.getForEntity(
+                API_BASE_URL + "/metadata/" + FULL_TOKEN_SUBJECT + "/properties/ticker", String.class);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+
+        JsonNode json = objectMapper.readTree(response.getBody());
+        assertEquals(FULL_TOKEN_SUBJECT, json.get("subject").asText());
+        assertEquals("TSTF", json.get("ticker").get("value").asText());
+    }
 }
