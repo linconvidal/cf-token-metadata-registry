@@ -246,6 +246,7 @@
         <module>job</module>
         <module>common</module>
         <module>cli</module>
+        <module>integration-test</module>
     </modules>
 
 </project>

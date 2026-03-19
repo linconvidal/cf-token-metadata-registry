@@ -1,0 +1,78 @@
+package org.cardanofoundation.tokenmetadata.registry.it;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
+
+import java.time.Duration;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
+
+/**
+ * Integration tests for health and sync status endpoints.
+ * Verifies that /health reports correct sync state and /actuator/health is available.
+ */
+public class SyncStatusIntegrationIT extends BaseIntegrationIT {
+
+    private static final String KNOWN_SUBJECT = "a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d3e4f5a0b1c2d354455354544f4b454e";
+    private static final ObjectMapper objectMapper = new ObjectMapper();
+
+    @BeforeAll
+    static void setUp() {
+        waitForApiReady();
+        waitForSyncComplete();
+    }
+
+    private static void waitForSyncComplete() {
+        log.info("Waiting for sync to complete before running sync status tests ...");
+        await().atMost(Duration.ofMinutes(5))
+                .pollInterval(Duration.ofSeconds(2))
+                .ignoreExceptions()
+                .until(() -> {
+                    ResponseEntity<String> response = restTemplate.getForEntity(
+                            API_BASE_URL + "/metadata/" + KNOWN_SUBJECT, String.class);
+                    log.info("Sync status test - sync poll: status={}", response.getStatusCode());
+                    return response.getStatusCode() == HttpStatus.OK;
+                });
+        log.info("Sync complete, running sync status tests.");
+    }
+
+    @Nested
+    @DisplayName("Health endpoint")
+    class HealthEndpoint {
+
+        @Test
+        void afterSync_reportsSyncedAndDone() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/health", String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode json = objectMapper.readTree(response.getBody());
+            assertThat(json.get("synced").asBoolean()).isTrue();
+            assertThat(json.get("syncStatus").asText()).isEqualTo("Sync done");
+        }
+    }
+
+    @Nested
+    @DisplayName("Actuator health")
+    class ActuatorHealth {
+
+        @Test
+        void shouldBeUp() throws Exception {
+            ResponseEntity<String> response = restTemplate.getForEntity(
+                    API_BASE_URL + "/actuator/health", String.class);
+
+            assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
+
+            JsonNode json = objectMapper.readTree(response.getBody());
+            assertThat(json.get("status").asText()).isEqualTo("UP");
+        }
+    }
+}
