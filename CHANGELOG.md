@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.5.0](https://github.com/linconvidal/cf-token-metadata-registry/compare/v1.4.3...v1.5.0) (2026-03-19)
+
+
+### Features
+
+* add end-to-end integration tests with yaci-cli ([#53](https://github.com/linconvidal/cf-token-metadata-registry/issues/53)) ([296b629](https://github.com/linconvidal/cf-token-metadata-registry/commit/296b62952693e0813d6a832528d1c8a694def552))
+
+
+### Bug Fixes
+
+* Build fail ([d06c9df](https://github.com/linconvidal/cf-token-metadata-registry/commit/d06c9df4b86f8380c47ba0d6dd99892e03de80a7))
+* Build fail ([d06c9df](https://github.com/linconvidal/cf-token-metadata-registry/commit/d06c9df4b86f8380c47ba0d6dd99892e03de80a7))
+* harden sync service — eliminate shell injection, track partial failures, improve testability ([7c5941d](https://github.com/linconvidal/cf-token-metadata-registry/commit/7c5941d3958e20e52c7ab7ab20160331f396a061))
+* use production API URLs instead of staging for Scalar docs ([4f0c26a](https://github.com/linconvidal/cf-token-metadata-registry/commit/4f0c26a38d2987ebb59e299c335777e85eb0526b))
+
 ## [1.4.3](https://github.com/cardano-foundation/cf-token-metadata-registry/compare/v1.4.2...v1.4.3) (2026-01-21)
 
 
